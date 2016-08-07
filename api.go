@@ -101,11 +101,6 @@ func Evaluate(cli *client.Client, payload *Payload, testcases []*TestCase) error
 				}
 			}
 		}
-
-		// // _, err = io.Copy(os.Stdout, result.reader)
-		// // if err != nil && err != io.EOF {
-		// // 	log.Fatal(err)
-		// }
 	}()
 	for {
 		select {
