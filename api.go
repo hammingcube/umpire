@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	_ "sync"
 	"time"
 )
 
@@ -27,10 +28,37 @@ const basic_example = `{
   ]
 }`
 
+const CPP_CODE = `
+# include <iostream>
+# include <chrono>
+# include <thread>
+
+
+using namespace std;
+int main() {
+  string s;
+  while(cin >> s) {
+  	std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    cout << s.size() << endl;
+  }
+}
+`
+
+var payloadExample = &Payload{
+	Problem:  &Problem{"problem-1"},
+	Language: "cpp",
+	Files: []*InMemoryFile{
+		&InMemoryFile{
+			Name:    "main.cpp",
+			Content: CPP_CODE,
+		},
+	},
+}
+
 func dieOnErr(err error) {
 	if err != nil {
-		log.Fatal(err)
-		os.Exit(1)
+		log.Println(err)
+		//os.Exit(1)
 	}
 }
 
@@ -73,14 +101,21 @@ func createDirectoryWithFiles(files []*InMemoryFile) (*string, error) {
 	return &dir, nil
 }
 
-func Evaluate(cli *client.Client, payload *Payload, testcases []*TestCase) error {
+type ErrMismatch struct {
+}
+
+func (v ErrMismatch) Error() string {
+	return "Mismatched"
+}
+
+func Evaluate(cli *client.Client, payload *Payload, testcase *TestCase) error {
 	workDir, err := createDirectoryWithFiles(payload.Files)
 	dieOnErr(err)
 	defer os.RemoveAll(*workDir)
 	srcDir, err := filepath.Abs(*workDir)
 	dieOnErr(err)
 	log.Println(srcDir)
-	result, err := DockerEval(cli, srcDir, payload.Language, testcases[0].Input)
+	result, err := DockerEval(cli, srcDir, payload.Language, testcase.Input)
 	if err != nil {
 		return err
 	}
@@ -89,31 +124,46 @@ func Evaluate(cli *client.Client, payload *Payload, testcases []*TestCase) error
 			log.Fatal("Error cleaning up container: %v", err)
 		}
 	}()
+	status := make(chan error)
 	go func() {
 		scanner1 := bufio.NewScanner(result.reader)
-		scanner2 := bufio.NewScanner(testcases[0].Expected)
+		scanner2 := bufio.NewScanner(testcase.Expected)
 		for scanner1.Scan() {
 			scanner2.Scan()
-			log.Printf("output: %s, expected: %s", scanner1.Text(), scanner2.Text())
+			text1, text2 := scanner1.Text(), scanner2.Text()
+			text1 = text1[8:] // <---NOTE: SOME DOCKER QUIRK
+			log.Printf("output: %s, expected: %s", text1, text2)
+			if text1 != text2 {
+				log.Printf("->%v<->%v<->%v<-", []byte(text1), []byte(text2), text1 == text2)
+				status <- ErrMismatch{}
+				return
+			}
 			for _, scanner := range []*bufio.Scanner{scanner1, scanner2} {
 				if err := scanner.Err(); err != nil {
-					log.Fatal(err)
+					log.Printf("%v", err)
+					status <- err
+					return
 				}
 			}
 		}
+		status <- nil
 	}()
 	for {
 		select {
 		case <-result.done:
 			log.Println("Done!")
-			return nil
 		case <-time.After(2 * time.Second):
 			log.Println("Still going...")
 			// result.cancel()
+		case err := <-status:
+			if err != nil {
+				log.Printf("Now: %v", err)
+				//result.cancel()
+			}
+			return err
 		}
 	}
 
-	return nil
 }
 
 func loadTestCases(problemsDir string, payload *Payload) []*TestCase {
@@ -137,6 +187,26 @@ func loadTestCases(problemsDir string, payload *Payload) []*TestCase {
 	return testcases
 }
 
+// func EvaluateAll(testcases []*TestCase) {
+// 	var wg sync.WaitGroup
+// 	errors := make(chan error)
+// 	for testcase := range testcases {
+// 		wg.Add(1)
+// 		go func(testcase *TestCase) {
+// 			defer wg.Done()
+
+// 		}(testcase)
+// 	}
+// 	go func() {
+// 		wg.Wait()
+// 		close(errors)
+// 	}()
+
+// 	for err := range errors {
+// 	}
+
+// }
+
 func main() {
 	problemsDir := "/Users/madhavjha/src/github.com/maddyonline/problems"
 	cli, err := client.NewEnvClient()
@@ -145,5 +215,8 @@ func main() {
 	dieOnErr(err)
 	log.Printf("%v", payload.Problem)
 	testcases := loadTestCases(problemsDir, payload)
-	Evaluate(cli, payload, testcases)
+	err = Evaluate(cli, payload, testcases[0])
+	if err != nil {
+		log.Printf("In main, got %v error", err)
+	}
 }
