@@ -162,6 +162,9 @@ func Evaluate(ctx context.Context, cli *client.Client, payload *Payload, testcas
 				//result.cancel()
 			}
 			return err
+		case <-ctx.Done():
+			result.cancel()
+			return nil
 		}
 	}
 
@@ -188,8 +191,8 @@ func loadTestCases(problemsDir string, payload *Payload) []*TestCase {
 	return testcases
 }
 
-func EvaluateAll(cli *client.Client, testcases []*TestCase) {
-	ctx, _ := context.WithCancel(context.Background())
+func EvaluateAll(cli *client.Client, testcases []*TestCase) error {
+	ctx, cancel := context.WithCancel(context.Background())
 
 	var wg sync.WaitGroup
 	errorChan := make(chan error)
@@ -210,9 +213,14 @@ func EvaluateAll(cli *client.Client, testcases []*TestCase) {
 	}()
 
 	for errVal := range errorChan {
+		if errVal != nil && errVal.Error() == "Mismatched" {
+			log.Printf("YO: %v", errVal)
+			cancel()
+			return errVal
+		}
 		log.Printf("Err: %v", errVal)
 	}
-
+	return nil
 }
 
 func main() {
@@ -220,5 +228,6 @@ func main() {
 	cli, err := client.NewEnvClient()
 	dieOnErr(err)
 	testcases := loadTestCases(problemsDir, payloadExample)
-	EvaluateAll(cli, testcases)
+	err = EvaluateAll(cli, testcases)
+	log.Printf("Finally, in main: %v", err)
 }
