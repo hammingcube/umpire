@@ -32,28 +32,28 @@ type Result struct {
 func Evaluate(cli *client.Client, payload *Payload, testcase io.Reader) error {
 	srcDir, language := "/Users/madhavjha/src/github.com/maddyonline/moredocker", "cpp"
 	result, err := DockerEval(cli, srcDir, language, testcase)
-	defer result.cancel()
 	if err != nil {
 		return err
 	}
+	defer func() {
+		if err := result.cleanup(); err != nil {
+			log.Fatal("Error cleaning up container: %v", err)
+		}
+	}()
 	go func() {
 		_, err = io.Copy(os.Stdout, result.reader)
 		if err != nil && err != io.EOF {
 			log.Fatal(err)
 		}
 	}()
-
 	for {
 		select {
 		case <-result.done:
-			log.Println("Done! Now removing container...")
-			if err := result.cleanup(); err != nil {
-				log.Fatal("Error cleaning up container: %v", err)
-				return err
-			}
+			log.Println("Done!")
 			return nil
 		case <-time.After(2 * time.Second):
 			log.Println("Still going...")
+			// result.cancel()
 		}
 	}
 

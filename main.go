@@ -102,7 +102,7 @@ func DockerEval(cli *client.Client, srcDir string, language string, testcase io.
 	go func() {
 		_, err = cli.ContainerWait(ctx, containerId)
 		if err != nil {
-			log.Fatal(err)
+			log.Printf("here: %v", err)
 			done <- struct{}{}
 			return
 		}
