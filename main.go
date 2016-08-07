@@ -8,10 +8,29 @@ import (
 	"github.com/docker/engine-api/types/network"
 	"golang.org/x/net/context"
 	"io"
+	"io/ioutil"
 	"log"
+	"net"
 	"os"
 	"time"
 )
+
+func writeConn(conn net.Conn, data []byte) error {
+	log.Printf("Want to write %d bytes", len(data))
+	var start, c int
+	var err error
+	for {
+		if c, err = conn.Write(data[start:]); err != nil {
+			return err
+		}
+		start += c
+		log.Printf("Wrote %d of %d bytes", start, len(data))
+		if c == 0 || start == len(data) {
+			break
+		}
+	}
+	return nil
+}
 
 func main() {
 	cli, err := client.NewEnvClient()
@@ -69,7 +88,7 @@ func main() {
 		}
 	}()
 
-	time.Sleep(5 * time.Second)
+	time.Sleep(1 * time.Second)
 
 	hijackedResp, err := cli.ContainerAttach(context.Background(), containerId, types.ContainerAttachOptions{
 		Stdin:  true,
@@ -79,13 +98,21 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	go func() {
+	file, err := os.Open("input.txt")
+	data, err := ioutil.ReadAll(file)
+	defer file.Close()
+	if err != nil {
+		log.Printf("Got error: %v", err)
+		data = []byte("bye\ncool\n")
+	}
+	go func(data []byte, conn net.Conn) {
 		defer func() { fmt.Println("Done writing") }()
-		defer hijackedResp.Conn.Close()
-		data := []byte("bye\ncool\n")
-		n, err := hijackedResp.Conn.Write(data)
-		log.Printf("Tried to write %d bytes, wrote %d bytes. Error: %v", len(data), n, err)
-	}()
+		defer conn.Close()
+		err := writeConn(conn, data)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}(data, hijackedResp.Conn)
 
 	ch := make(chan int)
 	<-ch
