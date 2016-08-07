@@ -2,15 +2,16 @@ package main
 
 import (
 	"bufio"
-	"encoding/json"
+	_ "encoding/json"
 	"github.com/docker/engine-api/client"
+	"golang.org/x/net/context"
 	"io"
 	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
 	"strings"
-	_ "sync"
+	"sync"
 	"time"
 )
 
@@ -108,7 +109,7 @@ func (v ErrMismatch) Error() string {
 	return "Mismatched"
 }
 
-func Evaluate(cli *client.Client, payload *Payload, testcase *TestCase) error {
+func Evaluate(ctx context.Context, cli *client.Client, payload *Payload, testcase *TestCase) error {
 	workDir, err := createDirectoryWithFiles(payload.Files)
 	dieOnErr(err)
 	defer os.RemoveAll(*workDir)
@@ -187,36 +188,37 @@ func loadTestCases(problemsDir string, payload *Payload) []*TestCase {
 	return testcases
 }
 
-// func EvaluateAll(testcases []*TestCase) {
-// 	var wg sync.WaitGroup
-// 	errors := make(chan error)
-// 	for testcase := range testcases {
-// 		wg.Add(1)
-// 		go func(testcase *TestCase) {
-// 			defer wg.Done()
+func EvaluateAll(cli *client.Client, testcases []*TestCase) {
+	ctx, _ := context.WithCancel(context.Background())
 
-// 		}(testcase)
-// 	}
-// 	go func() {
-// 		wg.Wait()
-// 		close(errors)
-// 	}()
+	var wg sync.WaitGroup
+	errorChan := make(chan error)
+	for _, testcase := range testcases {
+		wg.Add(1)
+		go func(testcase *TestCase) {
+			defer wg.Done()
+			err := Evaluate(ctx, cli, payloadExample, testcase)
+			if err != nil {
+				log.Printf("In main, got %v error", err)
+			}
+			errorChan <- err
+		}(testcase)
+	}
+	go func() {
+		wg.Wait()
+		close(errorChan)
+	}()
 
-// 	for err := range errors {
-// 	}
+	for errVal := range errorChan {
+		log.Printf("Err: %v", errVal)
+	}
 
-// }
+}
 
 func main() {
 	problemsDir := "/Users/madhavjha/src/github.com/maddyonline/problems"
 	cli, err := client.NewEnvClient()
-	payload := &Payload{}
-	err = json.Unmarshal([]byte(basic_example), payload)
 	dieOnErr(err)
-	log.Printf("%v", payload.Problem)
-	testcases := loadTestCases(problemsDir, payload)
-	err = Evaluate(cli, payload, testcases[0])
-	if err != nil {
-		log.Printf("In main, got %v error", err)
-	}
+	testcases := loadTestCases(problemsDir, payloadExample)
+	EvaluateAll(cli, testcases)
 }
