@@ -116,15 +116,8 @@ func Evaluate(cli *client.Client, payload *Payload, testcases []*TestCase) error
 	return nil
 }
 
-func main() {
-	problemsDir := "/Users/madhavjha/src/github.com/maddyonline/problems"
-	cli, err := client.NewEnvClient()
-	payload := &Payload{}
-	err = json.Unmarshal([]byte(basic_example), payload)
-	log.Printf("%v", payload.Problem)
-
+func loadTestCases(problemsDir string, payload *Payload) []*TestCase {
 	testcases := []*TestCase{}
-
 	files, err := ioutil.ReadDir(filepath.Join(problemsDir, payload.Problem.Id, "testcases"))
 	if err != nil {
 		log.Fatal(err)
@@ -141,5 +134,16 @@ func main() {
 			testcases = append(testcases, &TestCase{input, expected})
 		}
 	}
+	return testcases
+}
+
+func main() {
+	problemsDir := "/Users/madhavjha/src/github.com/maddyonline/problems"
+	cli, err := client.NewEnvClient()
+	payload := &Payload{}
+	err = json.Unmarshal([]byte(basic_example), payload)
+	dieOnErr(err)
+	log.Printf("%v", payload.Problem)
+	testcases := loadTestCases(problemsDir, payload)
 	Evaluate(cli, payload, testcases)
 }
