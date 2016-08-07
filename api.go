@@ -63,7 +63,7 @@ func createDirectoryWithFiles(files []*InMemoryFile) (*string, error) {
 func Evaluate(cli *client.Client, payload *Payload, testcase io.Reader) error {
 	workDir, err := createDirectoryWithFiles(payload.Files)
 	dieOnErr(err)
-	// defer os.RemoveAll(*workDir)
+	defer os.RemoveAll(*workDir)
 	srcDir, err := filepath.Abs(*workDir)
 	dieOnErr(err)
 	log.Println(srcDir)
