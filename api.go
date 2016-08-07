@@ -1,9 +1,11 @@
 package main
 
 import (
+	"github.com/docker/engine-api/client"
 	"io"
 	"log"
 	"os"
+	"time"
 )
 
 func dieOnErr(err error) {
@@ -27,26 +29,41 @@ type Result struct {
 	Status string `json:"status"`
 }
 
-func Evaluate(payload *Payload, testcase io.Reader) error {
+func Evaluate(cli *client.Client, payload *Payload, testcase io.Reader) error {
 	srcDir, language := "/Users/madhavjha/src/github.com/maddyonline/moredocker", "cpp"
-	reader, err := DockerEval(srcDir, language, testcase)
+	result, err := DockerEval(cli, srcDir, language, testcase)
+	defer result.cancel()
 	if err != nil {
 		return err
 	}
 	go func() {
-		_, err = io.Copy(os.Stdout, reader)
+		_, err = io.Copy(os.Stdout, result.reader)
 		if err != nil && err != io.EOF {
 			log.Fatal(err)
 		}
 	}()
 
-	ch := make(chan int)
-	<-ch
+	for {
+		select {
+		case <-result.done:
+			log.Println("Done! Now removing container...")
+			if err := result.cleanup(); err != nil {
+				log.Fatal("Error cleaning up container: %v", err)
+				return err
+			}
+			return nil
+		case <-time.After(2 * time.Second):
+			log.Println("Still going...")
+		}
+	}
+
 	return nil
 }
 
 func main() {
+	cli, err := client.NewEnvClient()
+	dieOnErr(err)
 	testcase, err := os.Open("input-new.txt")
 	dieOnErr(err)
-	Evaluate(&Payload{}, testcase)
+	Evaluate(cli, &Payload{}, testcase)
 }

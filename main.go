@@ -31,21 +31,15 @@ func writeConn(conn net.Conn, data []byte) error {
 	return nil
 }
 
-func DockerEval(srcDir string, language string, testcase io.Reader) (io.Reader, error) {
-	cli, err := client.NewEnvClient()
-	if err != nil {
-		return nil, err
-	}
+type DockerEvalResult struct {
+	containerId string
+	done        chan struct{}
+	reader      io.Reader
+	cancel      context.CancelFunc
+	cleanup     func() error
+}
 
-	options := types.ImageListOptions{All: true}
-	images, err := cli.ImageList(context.Background(), options)
-	if err != nil {
-		return nil, err
-	}
-	for _, c := range images {
-		fmt.Println(c.RepoTags)
-	}
-
+func DockerEval(cli *client.Client, srcDir string, language string, testcase io.Reader) (*DockerEvalResult, error) {
 	Cmd := map[string][]string{
 		"cpp": []string{"sh", "-c", "g++ -std=c++11 *.cpp -o binary.exe && ./binary.exe"},
 	}[language]
@@ -102,5 +96,20 @@ func DockerEval(srcDir string, language string, testcase io.Reader) (io.Reader, 
 			panic(err)
 		}
 	}(data, hijackedResp.Conn)
-	return reader, nil
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	done := make(chan struct{})
+	go func() {
+		_, err = cli.ContainerWait(ctx, containerId)
+		if err != nil {
+			log.Fatal(err)
+			done <- struct{}{}
+			return
+		}
+		done <- struct{}{}
+	}()
+	cleanup := func() error {
+		return cli.ContainerRemove(context.Background(), containerId, types.ContainerRemoveOptions{Force: true})
+	}
+	return &DockerEvalResult{containerId, done, reader, cancel, cleanup}, nil
 }
