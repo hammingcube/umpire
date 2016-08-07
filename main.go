@@ -47,7 +47,7 @@ func DockerEval(cli *client.Client, srcDir string, language string, testcase io.
 		"cpp": {[]string{"sh", "-c", "g++ -std=c++11 *.cpp -o binary.exe && ./binary.exe"}, "gcc"},
 	}
 
-	cfg := configMap["cpp"]
+	cfg := configMap[language]
 
 	config := &container.Config{
 		Cmd:         cfg.Cmd,
@@ -82,7 +82,6 @@ func DockerEval(cli *client.Client, srcDir string, language string, testcase io.
 	if err != nil {
 		return nil, err
 	}
-	time.Sleep(1 * time.Second)
 	hijackedResp, err := cli.ContainerAttach(context.Background(), containerId, types.ContainerAttachOptions{
 		Stdin:  true,
 		Stream: true,

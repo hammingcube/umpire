@@ -1,12 +1,28 @@
 package main
 
 import (
+	"encoding/json"
 	"github.com/docker/engine-api/client"
 	"io"
+	"io/ioutil"
 	"log"
 	"os"
+	"path/filepath"
 	"time"
 )
+
+const basic_example = `{
+  "language": "cpp",
+  "files": [
+    {
+      "name": "main.cpp",
+      "content": "# include <iostream>\nusing namespace std;\nint main() {string s;while(cin >> s) {cout << s.size() << endl;}}"
+    }, {
+    "name": "_stdin_",
+    "content": "abc\nhello\n"
+    }
+  ]
+}`
 
 func dieOnErr(err error) {
 	if err != nil {
@@ -29,9 +45,29 @@ type Result struct {
 	Status string `json:"status"`
 }
 
+func createDirectoryWithFiles(files []*InMemoryFile) (*string, error) {
+	dir, err := ioutil.TempDir(".", "work_dir_")
+	if err != nil {
+		return nil, err
+	}
+	for _, file := range files {
+		tmpfn := filepath.Join(dir, file.Name)
+		if err := ioutil.WriteFile(tmpfn, []byte(file.Content), 0666); err != nil {
+			return nil, err
+		}
+		log.Println(tmpfn)
+	}
+	return &dir, nil
+}
+
 func Evaluate(cli *client.Client, payload *Payload, testcase io.Reader) error {
-	srcDir, language := "/Users/madhavjha/src/github.com/maddyonline/moredocker", "cpp"
-	result, err := DockerEval(cli, srcDir, language, testcase)
+	workDir, err := createDirectoryWithFiles(payload.Files)
+	dieOnErr(err)
+	// defer os.RemoveAll(*workDir)
+	srcDir, err := filepath.Abs(*workDir)
+	dieOnErr(err)
+	log.Println(srcDir)
+	result, err := DockerEval(cli, srcDir, payload.Language, testcase)
 	if err != nil {
 		return err
 	}
@@ -62,8 +98,10 @@ func Evaluate(cli *client.Client, payload *Payload, testcase io.Reader) error {
 
 func main() {
 	cli, err := client.NewEnvClient()
+	payload := &Payload{}
+	err = json.Unmarshal([]byte(basic_example), payload)
 	dieOnErr(err)
 	testcase, err := os.Open("input-new.txt")
 	dieOnErr(err)
-	Evaluate(cli, &Payload{}, testcase)
+	Evaluate(cli, payload, testcase)
 }
