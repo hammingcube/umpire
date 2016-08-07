@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"encoding/json"
 	"github.com/docker/engine-api/client"
 	"io"
@@ -8,10 +9,12 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
 const basic_example = `{
+  "problem": {"id": "problem-1"},
   "language": "cpp",
   "files": [
     {
@@ -31,9 +34,19 @@ func dieOnErr(err error) {
 	}
 }
 
+type Problem struct {
+	Id string `json:"id"`
+}
+
+type TestCase struct {
+	Input    io.Reader
+	Expected io.Reader
+}
+
 type Payload struct {
 	Language string          `json:"language"`
 	Files    []*InMemoryFile `json:"files"`
+	Problem  *Problem        `json:"problem"`
 }
 
 type InMemoryFile struct {
@@ -60,14 +73,14 @@ func createDirectoryWithFiles(files []*InMemoryFile) (*string, error) {
 	return &dir, nil
 }
 
-func Evaluate(cli *client.Client, payload *Payload, testcase io.Reader) error {
+func Evaluate(cli *client.Client, payload *Payload, testcases []*TestCase) error {
 	workDir, err := createDirectoryWithFiles(payload.Files)
 	dieOnErr(err)
 	defer os.RemoveAll(*workDir)
 	srcDir, err := filepath.Abs(*workDir)
 	dieOnErr(err)
 	log.Println(srcDir)
-	result, err := DockerEval(cli, srcDir, payload.Language, testcase)
+	result, err := DockerEval(cli, srcDir, payload.Language, testcases[0].Input)
 	if err != nil {
 		return err
 	}
@@ -77,10 +90,22 @@ func Evaluate(cli *client.Client, payload *Payload, testcase io.Reader) error {
 		}
 	}()
 	go func() {
-		_, err = io.Copy(os.Stdout, result.reader)
-		if err != nil && err != io.EOF {
-			log.Fatal(err)
+		scanner1 := bufio.NewScanner(result.reader)
+		scanner2 := bufio.NewScanner(testcases[0].Expected)
+		for scanner1.Scan() {
+			scanner2.Scan()
+			log.Printf("output: %s, expected: %s", scanner1.Text(), scanner2.Text())
+			for _, scanner := range []*bufio.Scanner{scanner1, scanner2} {
+				if err := scanner.Err(); err != nil {
+					log.Fatal(err)
+				}
+			}
 		}
+
+		// // _, err = io.Copy(os.Stdout, result.reader)
+		// // if err != nil && err != io.EOF {
+		// // 	log.Fatal(err)
+		// }
 	}()
 	for {
 		select {
@@ -97,11 +122,29 @@ func Evaluate(cli *client.Client, payload *Payload, testcase io.Reader) error {
 }
 
 func main() {
+	problemsDir := "/Users/madhavjha/src/github.com/maddyonline/problems"
 	cli, err := client.NewEnvClient()
 	payload := &Payload{}
 	err = json.Unmarshal([]byte(basic_example), payload)
-	dieOnErr(err)
-	testcase, err := os.Open("input-new.txt")
-	dieOnErr(err)
-	Evaluate(cli, payload, testcase)
+	log.Printf("%v", payload.Problem)
+
+	testcases := []*TestCase{}
+
+	files, err := ioutil.ReadDir(filepath.Join(problemsDir, payload.Problem.Id, "testcases"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	for _, file := range files {
+
+		if strings.Contains(file.Name(), "input") {
+			inputFilename := file.Name()
+			expectedFilename := strings.Replace(file.Name(), "input", "output", 1)
+			input, err := os.Open(filepath.Join(problemsDir, payload.Problem.Id, "testcases", inputFilename))
+			dieOnErr(err)
+			expected, err := os.Open(filepath.Join(problemsDir, payload.Problem.Id, "testcases", expectedFilename))
+			dieOnErr(err)
+			testcases = append(testcases, &TestCase{input, expected})
+		}
+	}
+	Evaluate(cli, payload, testcases)
 }
