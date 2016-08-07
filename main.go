@@ -40,16 +40,18 @@ type DockerEvalResult struct {
 }
 
 func DockerEval(cli *client.Client, srcDir string, language string, testcase io.Reader) (*DockerEvalResult, error) {
-	Cmd := map[string][]string{
-		"cpp": []string{"sh", "-c", "g++ -std=c++11 *.cpp -o binary.exe && ./binary.exe"},
-	}[language]
-	Image := map[string]string{
-		"cpp": "gcc",
-	}[language]
+	configMap := map[string]struct {
+		Cmd   []string
+		Image string
+	}{
+		"cpp": {[]string{"sh", "-c", "g++ -std=c++11 *.cpp -o binary.exe && ./binary.exe"}, "gcc"},
+	}
+
+	cfg := configMap["cpp"]
 
 	config := &container.Config{
-		Cmd:         Cmd,
-		Image:       Image,
+		Cmd:         cfg.Cmd,
+		Image:       cfg.Image,
 		WorkingDir:  "/app",
 		AttachStdin: true,
 		OpenStdin:   true,
