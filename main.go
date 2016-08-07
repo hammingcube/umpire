@@ -11,7 +11,6 @@ import (
 	"io/ioutil"
 	"log"
 	"net"
-	"os"
 	"time"
 )
 
@@ -32,25 +31,31 @@ func writeConn(conn net.Conn, data []byte) error {
 	return nil
 }
 
-func main() {
+func DockerEval(srcDir string, language string, testcase io.Reader) (io.Reader, error) {
 	cli, err := client.NewEnvClient()
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
 	options := types.ImageListOptions{All: true}
 	images, err := cli.ImageList(context.Background(), options)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
-
 	for _, c := range images {
 		fmt.Println(c.RepoTags)
 	}
 
+	Cmd := map[string][]string{
+		"cpp": []string{"sh", "-c", "g++ -std=c++11 *.cpp -o binary.exe && ./binary.exe"},
+	}[language]
+	Image := map[string]string{
+		"cpp": "gcc",
+	}[language]
+
 	config := &container.Config{
-		Cmd:         []string{"sh", "-c", "g++ -std=c++11 main.cpp -o binary.exe && ./binary.exe"},
-		Image:       "gcc",
+		Cmd:         Cmd,
+		Image:       Image,
 		WorkingDir:  "/app",
 		AttachStdin: true,
 		OpenStdin:   true,
@@ -58,62 +63,44 @@ func main() {
 	}
 	hostConfig := &container.HostConfig{
 		Binds: []string{
-			"/Users/madhavjha/src/github.com/maddyonline/moredocker:/app",
+			fmt.Sprintf("%s:/app", srcDir),
 		},
 	}
-	resp, err := cli.ContainerCreate(context.Background(), config, hostConfig, &network.NetworkingConfig{}, "myapp")
+	resp, err := cli.ContainerCreate(context.Background(), config, hostConfig, &network.NetworkingConfig{}, "")
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 	containerId := resp.ID
-
 	err = cli.ContainerStart(context.Background(), containerId, types.ContainerStartOptions{})
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
-	fmt.Println("OK")
-
 	reader, err := cli.ContainerLogs(context.Background(), containerId, types.ContainerLogsOptions{
 		ShowStdout: true,
 		Follow:     true,
 	})
 	if err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
-
-	go func() {
-		_, err = io.Copy(os.Stdout, reader)
-		if err != nil && err != io.EOF {
-			log.Fatal(err)
-		}
-	}()
-
+	data, err := ioutil.ReadAll(testcase)
+	if err != nil {
+		return nil, err
+	}
 	time.Sleep(1 * time.Second)
-
 	hijackedResp, err := cli.ContainerAttach(context.Background(), containerId, types.ContainerAttachOptions{
 		Stdin:  true,
 		Stream: true,
 	})
-
 	if err != nil {
-		panic(err)
-	}
-	file, err := os.Open("input.txt")
-	data, err := ioutil.ReadAll(file)
-	defer file.Close()
-	if err != nil {
-		log.Printf("Got error: %v", err)
-		data = []byte("bye\ncool\n")
+		return nil, err
 	}
 	go func(data []byte, conn net.Conn) {
-		defer func() { fmt.Println("Done writing") }()
+		defer func() { log.Println("Done writing") }()
 		defer conn.Close()
 		err := writeConn(conn, data)
 		if err != nil {
-			log.Fatal(err)
+			panic(err)
 		}
 	}(data, hijackedResp.Conn)
-
-	ch := make(chan int)
-	<-ch
+	return reader, nil
 }
