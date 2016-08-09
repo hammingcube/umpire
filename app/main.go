@@ -11,6 +11,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net"
+	"strings"
 	"time"
 )
 
@@ -44,24 +45,30 @@ func DockerEval(cli *client.Client, srcDir string, language string, testcase io.
 		Cmd   []string
 		Image string
 	}{
-		"cpp": {[]string{"sh", "-c", "g++ -std=c++11 *.cpp -o binary.exe && ./binary.exe"}, "gcc"},
+		"cpp": {[]string{"sh", "-c", "g++ -std=c++11 main.cpp -o binary.exe && ./binary.exe"}, "gcc"},
 	}
 
 	cfg := configMap[language]
 
 	config := &container.Config{
-		Cmd:         cfg.Cmd,
-		Image:       cfg.Image,
-		WorkingDir:  "/app",
-		AttachStdin: true,
-		OpenStdin:   true,
-		StdinOnce:   true,
+		Cmd:          cfg.Cmd,
+		Image:        cfg.Image,
+		WorkingDir:   "/app",
+		AttachStdin:  true,
+		OpenStdin:    true,
+		StdinOnce:    false,
+		AttachStdout: false,
+		Tty:          false,
 	}
+	newSrcDir := strings.Replace(srcDir, "/go/src", "/Users/madhavjha/src/github.com/maddyonline/moredocker", 1)
+	log.Printf("old: %s, new: %s", srcDir, newSrcDir)
 	hostConfig := &container.HostConfig{
 		Binds: []string{
-			fmt.Sprintf("%s:/app", srcDir),
+			fmt.Sprintf("%s:/app", newSrcDir),
 		},
 	}
+	log.Printf("hostConfig: %#v", hostConfig)
+
 	resp, err := cli.ContainerCreate(context.Background(), config, hostConfig, &network.NetworkingConfig{}, "")
 	if err != nil {
 		return nil, err
@@ -110,7 +117,7 @@ func DockerEval(cli *client.Client, srcDir string, language string, testcase io.
 		done <- struct{}{}
 	}()
 	cleanup := func() error {
-		return cli.ContainerRemove(context.Background(), containerId, types.ContainerRemoveOptions{Force: true})
+		return nil //cli.ContainerRemove(context.Background(), containerId, types.ContainerRemoveOptions{Force: true})
 	}
 	return &DockerEvalResult{containerId, done, reader, cancel, cleanup}, nil
 }

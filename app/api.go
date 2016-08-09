@@ -127,6 +127,9 @@ func Evaluate(ctx context.Context, cli *client.Client, payload *Payload, testcas
 	}()
 	status := make(chan error)
 	go func() {
+		log.Println("Wating before reading...")
+		time.Sleep(5 * time.Second)
+		log.Println("Now reading...")
 		scanner1 := bufio.NewScanner(result.reader)
 		scanner2 := bufio.NewScanner(testcase.Expected)
 		for scanner1.Scan() {
