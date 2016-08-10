@@ -38,7 +38,7 @@ using namespace std;
 int main() {
   string s;
   while(cin >> s) {
-  	std::this_thread::sleep_for(std::chrono::milliseconds(500));
+  	std::this_thread::sleep_for(std::chrono::milliseconds(100));
     cout << s.size() << endl;
   }
 }
@@ -121,9 +121,6 @@ func Evaluate(ctx context.Context, cli *client.Client, payload *judge.Payload, t
 	}()
 	status := make(chan error)
 	go func() {
-		log.Println("Wating before reading...")
-		time.Sleep(5 * time.Second)
-		log.Println("Now reading...")
 		scanner1 := bufio.NewScanner(result.Reader)
 		scanner2 := bufio.NewScanner(testcase.Expected)
 		for scanner1.Scan() {
