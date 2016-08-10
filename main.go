@@ -4,6 +4,7 @@ import (
 	"bufio"
 	_ "encoding/json"
 	"github.com/docker/engine-api/client"
+	"github.com/maddyonline/umpire/judge"
 	"golang.org/x/net/context"
 	"io"
 	"io/ioutil"
@@ -43,15 +44,16 @@ int main() {
 }
 `
 
-var payloadExample = &Payload{
-	Problem:  &Problem{"problem-1"},
+var payloadExample = &judge.Payload{
+	Problem:  &judge.Problem{"problem-1"},
 	Language: "cpp",
-	Files: []*InMemoryFile{
-		&InMemoryFile{
+	Files: []*judge.InMemoryFile{
+		&judge.InMemoryFile{
 			Name:    "main.cpp",
 			Content: CPP_CODE,
 		},
 	},
+	Stdin: "",
 }
 
 func dieOnErr(err error) {
@@ -61,31 +63,16 @@ func dieOnErr(err error) {
 	}
 }
 
-type Problem struct {
-	Id string `json:"id"`
-}
-
 type TestCase struct {
 	Input    io.Reader
 	Expected io.Reader
-}
-
-type Payload struct {
-	Language string          `json:"language"`
-	Files    []*InMemoryFile `json:"files"`
-	Problem  *Problem        `json:"problem"`
-}
-
-type InMemoryFile struct {
-	Name    string `json:"name"`
-	Content string `json:"content"`
 }
 
 type Result struct {
 	Status string `json:"status"`
 }
 
-func createDirectoryWithFiles(files []*InMemoryFile) (*string, error) {
+func createDirectoryWithFiles(files []*judge.InMemoryFile) (*string, error) {
 	dir, err := ioutil.TempDir(".", "work_dir_")
 	if err != nil {
 		return nil, err
@@ -107,21 +94,28 @@ func (v ErrMismatch) Error() string {
 	return "Mismatched"
 }
 
-func Evaluate(ctx context.Context, cli *client.Client, payload *Payload, testcase *TestCase) error {
+func Evaluate(ctx context.Context, cli *client.Client, payload *judge.Payload, testcase *TestCase) error {
 	workDir, err := createDirectoryWithFiles(payload.Files)
-	dieOnErr(err)
-	//defer os.RemoveAll(*workDir)
-	srcDir, err := filepath.Abs(*workDir)
-	dieOnErr(err)
-	log.Println(srcDir)
-	log.Printf("Sleeping for a while...")
-	time.Sleep(4 * time.Second)
-	result, err := DockerEval(cli, srcDir, payload.Language, testcase.Input)
 	if err != nil {
 		return err
 	}
 	defer func() {
-		if err := result.cleanup(); err != nil {
+		log.Printf("Removing temporary working directory: %s", *workDir)
+		os.RemoveAll(*workDir)
+	}()
+	testcaseData, err := ioutil.ReadAll(testcase.Input)
+	if err != nil {
+		return err
+	}
+	payloadToSend := &judge.Payload{}
+	*payloadToSend = *payload
+	payloadToSend.Stdin = string(testcaseData)
+	result, err := judge.DockerEval(ctx, cli, payloadToSend)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := result.Cleanup(); err != nil {
 			log.Fatal("Error cleaning up container: %v", err)
 		}
 	}()
@@ -130,7 +124,7 @@ func Evaluate(ctx context.Context, cli *client.Client, payload *Payload, testcas
 		log.Println("Wating before reading...")
 		time.Sleep(5 * time.Second)
 		log.Println("Now reading...")
-		scanner1 := bufio.NewScanner(result.reader)
+		scanner1 := bufio.NewScanner(result.Reader)
 		scanner2 := bufio.NewScanner(testcase.Expected)
 		for scanner1.Scan() {
 			scanner2.Scan()
@@ -154,7 +148,7 @@ func Evaluate(ctx context.Context, cli *client.Client, payload *Payload, testcas
 	}()
 	for {
 		select {
-		case <-result.done:
+		case <-result.Done:
 			log.Println("Done!")
 		case <-time.After(2 * time.Second):
 			log.Println("Still going...")
@@ -166,14 +160,14 @@ func Evaluate(ctx context.Context, cli *client.Client, payload *Payload, testcas
 			}
 			return err
 		case <-ctx.Done():
-			result.cancel()
+			result.Cancel()
 			return nil
 		}
 	}
 
 }
 
-func loadTestCases(problemsDir string, payload *Payload) []*TestCase {
+func loadTestCases(problemsDir string, payload *judge.Payload) []*TestCase {
 	testcases := []*TestCase{}
 	files, err := ioutil.ReadDir(filepath.Join(problemsDir, payload.Problem.Id, "testcases"))
 	if err != nil {
@@ -199,10 +193,13 @@ func EvaluateAll(cli *client.Client, testcases []*TestCase) error {
 
 	var wg sync.WaitGroup
 	errorChan := make(chan error)
-	for _, testcase := range testcases {
+	for i, testcase := range testcases {
 		wg.Add(1)
 		go func(testcase *TestCase) {
-			defer wg.Done()
+			defer func() {
+				log.Printf("Done evaluating testcase %d", i)
+				wg.Done()
+			}()
 			err := Evaluate(ctx, cli, payloadExample, testcase)
 			if err != nil {
 				log.Printf("In main, got %v error", err)
@@ -212,18 +209,18 @@ func EvaluateAll(cli *client.Client, testcases []*TestCase) error {
 	}
 	go func() {
 		wg.Wait()
+		log.Printf("Closing errorChan")
 		close(errorChan)
 	}()
-
-	for errVal := range errorChan {
+	var errVal error
+	for errVal = range errorChan {
+		log.Printf("Err: %v", errVal)
 		if errVal != nil && errVal.Error() == "Mismatched" {
 			log.Printf("YO: %v", errVal)
 			cancel()
-			return errVal
 		}
-		log.Printf("Err: %v", errVal)
 	}
-	return nil
+	return errVal
 }
 
 func main() {

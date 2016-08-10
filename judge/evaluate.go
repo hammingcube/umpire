@@ -1,19 +1,34 @@
-package main
+package judge
 
 import (
-	"fmt"
+	"encoding/json"
 	"github.com/docker/engine-api/client"
 	"github.com/docker/engine-api/types"
 	"github.com/docker/engine-api/types/container"
 	"github.com/docker/engine-api/types/network"
 	"golang.org/x/net/context"
 	"io"
-	"io/ioutil"
 	"log"
 	"net"
 	_ "strings"
 	"time"
 )
+
+type Problem struct {
+	Id string `json:"id"`
+}
+
+type InMemoryFile struct {
+	Name    string `json:"name"`
+	Content string `json:"content"`
+}
+
+type Payload struct {
+	Language string          `json:"language"`
+	Files    []*InMemoryFile `json:"files"`
+	Problem  *Problem        `json:"problem"`
+	Stdin    string          `json:"stdin"`
+}
 
 func writeConn(conn net.Conn, data []byte) error {
 	log.Printf("Want to write %d bytes", len(data))
@@ -34,64 +49,46 @@ func writeConn(conn net.Conn, data []byte) error {
 
 type DockerEvalResult struct {
 	containerId string
-	done        chan struct{}
-	reader      io.Reader
-	cancel      context.CancelFunc
-	cleanup     func() error
+	Done        chan struct{}
+	Reader      io.Reader
+	Cancel      context.CancelFunc
+	Cleanup     func() error
 }
 
-func DockerEval(cli *client.Client, srcDir string, language string, testcase io.Reader) (*DockerEvalResult, error) {
-	configMap := map[string]struct {
-		Cmd   []string
-		Image string
-	}{
-		"cpp": {[]string{"sh", "-c", "echo $CODE && echo $CODE > mmain.cpp && g++ -std=c++11 mmain.cpp -o binary.exe && ./binary.exe"}, "glot/clang"},
-	}
-
-	cfg := configMap[language]
-
+func DockerEval(ctx context.Context, cli *client.Client, payload *Payload) (*DockerEvalResult, error) {
+	cfg := configMap[payload.Language]
 	config := &container.Config{
-		//Cmd:          cfg.Cmd,
-		Image: cfg.Image,
-		//WorkingDir:   "/app",
+		Image:       cfg.Image,
+		Cmd:         cfg.Cmd,
 		AttachStdin: true,
 		OpenStdin:   true,
 		StdinOnce:   false,
-		//AttachStdout: true,
-		//Tty:          true,
-		//Env:          []string{fmt.Sprintf("CODE=`%s`", CPP_CODE)},
 	}
 
-	hostConfig := &container.HostConfig{
-		Binds: []string{
-			fmt.Sprintf("%s:%s", srcDir, srcDir),
-		},
-	}
-
-	resp, err := cli.ContainerCreate(context.Background(), config, hostConfig, &network.NetworkingConfig{}, "")
+	resp, err := cli.ContainerCreate(ctx, config, &container.HostConfig{}, &network.NetworkingConfig{}, "")
 	if err != nil {
 		return nil, err
 	}
 	containerId := resp.ID
-	err = cli.ContainerStart(context.Background(), containerId, types.ContainerStartOptions{})
+
+	err = cli.ContainerStart(ctx, containerId, types.ContainerStartOptions{})
 	if err != nil {
 		return nil, err
 	}
-	reader, err := cli.ContainerLogs(context.Background(), containerId, types.ContainerLogsOptions{
+
+	reader, err := cli.ContainerLogs(ctx, containerId, types.ContainerLogsOptions{
 		ShowStdout: true,
 		Follow:     true,
 	})
 	if err != nil {
 		return nil, err
 	}
-	data, err := ioutil.ReadAll(testcase)
+
+	data, err := json.Marshal(payload)
 	if err != nil {
 		return nil, err
 	}
-	if len(data) > 0 {
-
-	}
-	hijackedResp, err := cli.ContainerAttach(context.Background(), containerId, types.ContainerAttachOptions{
+	hijackedResp, err := cli.ContainerAttach(ctx, containerId, types.ContainerAttachOptions{
 		Stdin:  true,
 		Stream: true,
 	})
@@ -103,9 +100,9 @@ func DockerEval(cli *client.Client, srcDir string, language string, testcase io.
 		defer conn.Close()
 		err := writeConn(conn, data)
 		if err != nil {
-			panic(err)
+			log.Printf("Error while writing to connection: %v", err)
 		}
-	}([]byte(basic_example), hijackedResp.Conn)
+	}(data, hijackedResp.Conn)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	done := make(chan struct{})
@@ -119,7 +116,7 @@ func DockerEval(cli *client.Client, srcDir string, language string, testcase io.
 		done <- struct{}{}
 	}()
 	cleanup := func() error {
-		return nil //cli.ContainerRemove(context.Background(), containerId, types.ContainerRemoveOptions{Force: true})
+		return cli.ContainerRemove(context.Background(), containerId, types.ContainerRemoveOptions{Force: true})
 	}
 	return &DockerEvalResult{containerId, done, reader, cancel, cleanup}, nil
 }
