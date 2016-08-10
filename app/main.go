@@ -11,7 +11,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net"
-	"strings"
+	_ "strings"
 	"time"
 )
 
@@ -45,29 +45,28 @@ func DockerEval(cli *client.Client, srcDir string, language string, testcase io.
 		Cmd   []string
 		Image string
 	}{
-		"cpp": {[]string{"sh", "-c", "g++ -std=c++11 main.cpp -o binary.exe && ./binary.exe"}, "gcc"},
+		"cpp": {[]string{"sh", "-c", "echo $CODE && echo $CODE > mmain.cpp && g++ -std=c++11 mmain.cpp -o binary.exe && ./binary.exe"}, "glot/clang"},
 	}
 
 	cfg := configMap[language]
 
 	config := &container.Config{
-		Cmd:          cfg.Cmd,
-		Image:        cfg.Image,
-		WorkingDir:   "/app",
-		AttachStdin:  true,
-		OpenStdin:    true,
-		StdinOnce:    false,
-		AttachStdout: false,
-		Tty:          false,
+		//Cmd:          cfg.Cmd,
+		Image: cfg.Image,
+		//WorkingDir:   "/app",
+		AttachStdin: true,
+		OpenStdin:   true,
+		StdinOnce:   false,
+		//AttachStdout: true,
+		//Tty:          true,
+		//Env:          []string{fmt.Sprintf("CODE=`%s`", CPP_CODE)},
 	}
-	newSrcDir := strings.Replace(srcDir, "/go/src", "/Users/madhavjha/src/github.com/maddyonline/moredocker", 1)
-	log.Printf("old: %s, new: %s", srcDir, newSrcDir)
+
 	hostConfig := &container.HostConfig{
 		Binds: []string{
-			fmt.Sprintf("%s:/app", newSrcDir),
+			fmt.Sprintf("%s:%s", srcDir, srcDir),
 		},
 	}
-	log.Printf("hostConfig: %#v", hostConfig)
 
 	resp, err := cli.ContainerCreate(context.Background(), config, hostConfig, &network.NetworkingConfig{}, "")
 	if err != nil {
@@ -89,6 +88,9 @@ func DockerEval(cli *client.Client, srcDir string, language string, testcase io.
 	if err != nil {
 		return nil, err
 	}
+	if len(data) > 0 {
+
+	}
 	hijackedResp, err := cli.ContainerAttach(context.Background(), containerId, types.ContainerAttachOptions{
 		Stdin:  true,
 		Stream: true,
@@ -103,7 +105,7 @@ func DockerEval(cli *client.Client, srcDir string, language string, testcase io.
 		if err != nil {
 			panic(err)
 		}
-	}(data, hijackedResp.Conn)
+	}([]byte(basic_example), hijackedResp.Conn)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	done := make(chan struct{})

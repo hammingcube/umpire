@@ -1,0 +1,1 @@
+docker run --rm -it -e GOPATH="/go/src/app/vendor:/go:$PWD" -v $PWD:/go/src/app -v $PROBLEMS_DIR:$PROBLEMS_DIR -v /var/run/docker.sock:/var/run/docker.sock -w /go/src/app golang sh -c "go build"

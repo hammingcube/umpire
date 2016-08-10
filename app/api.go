@@ -18,13 +18,11 @@ import (
 const basic_example = `{
   "problem": {"id": "problem-1"},
   "language": "cpp",
+  "stdin": "hello\nhi\n",
   "files": [
     {
       "name": "main.cpp",
       "content": "# include <iostream>\nusing namespace std;\nint main() {string s;while(cin >> s) {cout << s.size() << endl;}}"
-    }, {
-    "name": "_stdin_",
-    "content": "abc\nhello\n"
     }
   ]
 }`
@@ -112,10 +110,12 @@ func (v ErrMismatch) Error() string {
 func Evaluate(ctx context.Context, cli *client.Client, payload *Payload, testcase *TestCase) error {
 	workDir, err := createDirectoryWithFiles(payload.Files)
 	dieOnErr(err)
-	defer os.RemoveAll(*workDir)
+	//defer os.RemoveAll(*workDir)
 	srcDir, err := filepath.Abs(*workDir)
 	dieOnErr(err)
 	log.Println(srcDir)
+	log.Printf("Sleeping for a while...")
+	time.Sleep(4 * time.Second)
 	result, err := DockerEval(cli, srcDir, payload.Language, testcase.Input)
 	if err != nil {
 		return err
