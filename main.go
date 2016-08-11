@@ -30,32 +30,6 @@ const basic_example = `{
   ]
 }`
 
-const CPP_CODE = `# include <iostream>
-# include <chrono>
-# include <thread>
-
-
-using namespace std;
-int main() {
-  string s;
-  while(cin >> s) {
-  	std::this_thread::sleep_for(std::chrono::milliseconds(5));
-    cout << s.size() << endl;
-  }
-}`
-
-var payloadExample = &Payload{
-	Problem:  &Problem{"problem-1"},
-	Language: "cpp",
-	Files: []*InMemoryFile{
-		&InMemoryFile{
-			Name:    "main.cpp",
-			Content: CPP_CODE,
-		},
-	},
-	Stdin: "",
-}
-
 func dieOnErr(err error) {
 	if err != nil {
 		log.Println(err)
@@ -269,12 +243,44 @@ func evaluateAll(cli *client.Client, payload *Payload, testcases []*TestCase, st
 	return firstNonNilError.(ErrKnown)
 }
 
-func Judge() {
+func Judge(payload *Payload) {
 	problemsDir := "/Users/madhavjha/src/github.com/maddyonline/problems"
 	cli, err := client.NewEnvClient()
 	dieOnErr(err)
-	testcases := loadTestCases(problemsDir, payloadExample)
-	knwonErr := evaluateAll(cli, payloadExample, testcases, ioutil.Discard, ioutil.Discard)
+	testcases := loadTestCases(problemsDir, payload)
+	knwonErr := evaluateAll(cli, payload, testcases, ioutil.Discard, ioutil.Discard)
+	log.Printf("Finally, in main: %v", knwonErr)
+	result := &Result{}
+	switch knwonErr.Type {
+	case "nil":
+		result.Status = Pass
+		result.Details = ""
+	case "stdout":
+		result.Status = Fail
+		result.Details = knwonErr.LongDesc
+	case "stderr":
+		result.Status = Fail
+		result.Details = knwonErr.LongDesc
+	}
+	log.Printf("Output: %v", result)
+}
+
+func solve(id string, w io.Writer) {
+	io.Copy(w, strings.NewReader("5\n2\n"))
+}
+
+func Run(payload *Payload) {
+	cli, err := client.NewEnvClient()
+	dieOnErr(err)
+	r, w := io.Pipe()
+	go func() {
+		solve(payload.Problem.Id, w)
+	}()
+	testcases := []*TestCase{&TestCase{
+		Input:    strings.NewReader(payload.Stdin),
+		Expected: r,
+	}}
+	knwonErr := evaluateAll(cli, payload, testcases, ioutil.Discard, ioutil.Discard)
 	log.Printf("Finally, in main: %v", knwonErr)
 	result := &Result{}
 	switch knwonErr.Type {
