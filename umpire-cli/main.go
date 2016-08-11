@@ -2,6 +2,7 @@ package main
 
 import (
 	"github.com/maddyonline/umpire"
+	_ "os"
 )
 
 const CPP_CODE = `# include <iostream>
@@ -31,5 +32,6 @@ var payloadExample = &umpire.Payload{
 }
 
 func main() {
-	umpire.Run(payloadExample)
+	//umpire.Run(payloadExample, os.Stdout, os.Stderr)
+	umpire.Judge(payloadExample)
 }

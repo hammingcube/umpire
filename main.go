@@ -269,7 +269,7 @@ func solve(id string, w io.Writer) {
 	io.Copy(w, strings.NewReader("5\n2\n"))
 }
 
-func Run(payload *Payload) {
+func Run(payload *Payload, stdout, stderr io.Writer) {
 	cli, err := client.NewEnvClient()
 	dieOnErr(err)
 	r, w := io.Pipe()
@@ -280,7 +280,7 @@ func Run(payload *Payload) {
 		Input:    strings.NewReader(payload.Stdin),
 		Expected: r,
 	}}
-	knwonErr := evaluateAll(cli, payload, testcases, ioutil.Discard, ioutil.Discard)
+	knwonErr := evaluateAll(cli, payload, testcases, stdout, stderr)
 	log.Printf("Finally, in main: %v", knwonErr)
 	result := &Result{}
 	switch knwonErr.Type {
