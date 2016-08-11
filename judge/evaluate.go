@@ -50,7 +50,8 @@ func writeConn(conn net.Conn, data []byte) error {
 type DockerEvalResult struct {
 	containerId string
 	Done        chan struct{}
-	Reader      io.Reader
+	Stdout      io.Reader
+	Stderr      io.Reader
 	Cancel      context.CancelFunc
 	Cleanup     func() error
 }
@@ -76,8 +77,15 @@ func DockerEval(ctx context.Context, cli *client.Client, payload *Payload) (*Doc
 		return nil, err
 	}
 
-	reader, err := cli.ContainerLogs(ctx, containerId, types.ContainerLogsOptions{
+	stdout, err := cli.ContainerLogs(ctx, containerId, types.ContainerLogsOptions{
 		ShowStdout: true,
+		Follow:     true,
+	})
+	if err != nil {
+		return nil, err
+	}
+	stderr, err := cli.ContainerLogs(ctx, containerId, types.ContainerLogsOptions{
+		ShowStderr: true,
 		Follow:     true,
 	})
 	if err != nil {
@@ -118,5 +126,5 @@ func DockerEval(ctx context.Context, cli *client.Client, payload *Payload) (*Doc
 	cleanup := func() error {
 		return cli.ContainerRemove(context.Background(), containerId, types.ContainerRemoveOptions{Force: true})
 	}
-	return &DockerEvalResult{containerId, done, reader, cancel, cleanup}, nil
+	return &DockerEvalResult{containerId, done, stdout, stderr, cancel, cleanup}, nil
 }

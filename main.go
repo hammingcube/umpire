@@ -2,7 +2,10 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	_ "encoding/json"
+	"errors"
+	"fmt"
 	"github.com/docker/engine-api/client"
 	"github.com/maddyonline/umpire/judge"
 	"golang.org/x/net/context"
@@ -28,8 +31,7 @@ const basic_example = `{
   ]
 }`
 
-const CPP_CODE = `
-# include <iostream>
+const CPP_CODE = `# include <iostream>
 # include <chrono>
 # include <thread>
 
@@ -38,11 +40,10 @@ using namespace std;
 int main() {
   string s;
   while(cin >> s) {
-  	std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  	std::this_thread::sleep_for(std::chrono::milliseconds(5));
     cout << s.size() << endl;
   }
-}
-`
+}`
 
 var payloadExample = &judge.Payload{
 	Problem:  &judge.Problem{"problem-1"},
@@ -66,10 +67,30 @@ func dieOnErr(err error) {
 type TestCase struct {
 	Input    io.Reader
 	Expected io.Reader
+	Id       string
 }
 
+type RunStatus string
+
+const (
+	Pass = "Pass"
+	Fail = "Fail"
+)
+
 type Result struct {
-	Status string `json:"status"`
+	Status  RunStatus `json:"status"`
+	Details string    `json:"details"`
+}
+
+type ErrKnown struct {
+	Type      string
+	ShortDesc string
+	LongDesc  string
+	Err       error
+}
+
+func (v ErrKnown) Error() string {
+	return fmt.Sprintf("%s: %s", v.Type, v.ShortDesc)
 }
 
 func createDirectoryWithFiles(files []*judge.InMemoryFile) (*string, error) {
@@ -94,7 +115,7 @@ func (v ErrMismatch) Error() string {
 	return "Mismatched"
 }
 
-func Evaluate(ctx context.Context, cli *client.Client, payload *judge.Payload, testcase *TestCase) error {
+func Evaluate(ctx context.Context, cli *client.Client, payload *judge.Payload, testNum int, testcase *TestCase) error {
 	workDir, err := createDirectoryWithFiles(payload.Files)
 	if err != nil {
 		return err
@@ -119,9 +140,10 @@ func Evaluate(ctx context.Context, cli *client.Client, payload *judge.Payload, t
 			log.Fatal("Error cleaning up container: %v", err)
 		}
 	}()
-	status := make(chan error)
+
+	stdoutChan := make(chan error)
 	go func() {
-		scanner1 := bufio.NewScanner(result.Reader)
+		scanner1 := bufio.NewScanner(result.Stdout)
 		scanner2 := bufio.NewScanner(testcase.Expected)
 		for scanner1.Scan() {
 			scanner2.Scan()
@@ -130,34 +152,60 @@ func Evaluate(ctx context.Context, cli *client.Client, payload *judge.Payload, t
 			log.Printf("output: %s, expected: %s", text1, text2)
 			if text1 != text2 {
 				log.Printf("->%v<->%v<->%v<-", []byte(text1), []byte(text2), text1 == text2)
-				status <- ErrMismatch{}
+				longDesc := fmt.Sprintf("On input %s: got %s, expected: %s", testcase.Id, text1, text2)
+				stdoutChan <- ErrKnown{"stdout", "mismatch", longDesc, ErrMismatch{}}
 				return
 			}
 			for _, scanner := range []*bufio.Scanner{scanner1, scanner2} {
 				if err := scanner.Err(); err != nil {
-					log.Printf("%v", err)
-					status <- err
+					log.Printf("scanner err: %v", err)
+					stdoutChan <- ErrKnown{"stdout", "mismatch", err.Error(), err}
 					return
 				}
 			}
 		}
-		status <- nil
+		stdoutChan <- nil
 	}()
+
+	stderrChan := make(chan error)
+	go func() {
+		var b bytes.Buffer
+		n, err := io.Copy(&b, result.Stderr)
+		log.Printf("stderr: %d %v", n, err)
+		if err != nil {
+			stderrChan <- ErrKnown{"stderr", "io copy", err.Error(), err}
+			return
+		}
+		if n > 0 {
+			stderrChan <- ErrKnown{"stderr", "running program", b.String(), errors.New(b.String())}
+			return
+		}
+		stderrChan <- nil
+	}()
+
 	for {
 		select {
 		case <-result.Done:
-			log.Println("Done!")
+			log.Println("Done with execution")
 		case <-time.After(2 * time.Second):
 			log.Println("Still going...")
 			// result.cancel()
-		case err := <-status:
-			if err != nil {
-				log.Printf("Now: %v", err)
-				//result.cancel()
+		case errStdout := <-stdoutChan:
+			if errStdout != nil {
+				log.Printf("Quitting: %s", errStdout)
+				return errStdout
 			}
-			return err
+			log.Printf("Returning nil (stdout)")
+			return nil
+		case errStderr := <-stderrChan:
+			if errStderr != nil {
+				log.Printf("Quitting: %s", errStderr)
+				return errStderr
+			}
 		case <-ctx.Done():
+			log.Printf("Quitting due to context cancellation")
 			result.Cancel()
+			log.Printf("Returning nil (context)")
 			return nil
 		}
 	}
@@ -179,45 +227,47 @@ func loadTestCases(problemsDir string, payload *judge.Payload) []*TestCase {
 			dieOnErr(err)
 			expected, err := os.Open(filepath.Join(problemsDir, payload.Problem.Id, "testcases", expectedFilename))
 			dieOnErr(err)
-			testcases = append(testcases, &TestCase{input, expected})
+			testcases = append(testcases, &TestCase{input, expected, inputFilename})
 		}
 	}
 	return testcases
 }
 
-func EvaluateAll(cli *client.Client, testcases []*TestCase) error {
+func EvaluateAll(cli *client.Client, testcases []*TestCase) ErrKnown {
 	ctx, cancel := context.WithCancel(context.Background())
-
 	var wg sync.WaitGroup
 	errorChan := make(chan error)
 	for i, testcase := range testcases {
 		wg.Add(1)
-		go func(testcase *TestCase) {
+		go func(i int, testcase *TestCase) {
 			defer func() {
 				log.Printf("Done evaluating testcase %d", i)
 				wg.Done()
 			}()
-			err := Evaluate(ctx, cli, payloadExample, testcase)
+			err := Evaluate(ctx, cli, payloadExample, i, testcase)
 			if err != nil {
-				log.Printf("In main, got %v error", err)
+				log.Printf("In evaluateAll, evaluate error: %v", err)
 			}
 			errorChan <- err
-		}(testcase)
+		}(i, testcase)
 	}
 	go func() {
 		wg.Wait()
 		log.Printf("Closing errorChan")
 		close(errorChan)
 	}()
-	var errVal error
-	for errVal = range errorChan {
-		log.Printf("Err: %v", errVal)
-		if errVal != nil && errVal.Error() == "Mismatched" {
-			log.Printf("YO: %v", errVal)
+	var firstNonNilError error
+	for errVal := range errorChan {
+		log.Printf("errVal: %v", errVal)
+		if errVal != nil {
+			firstNonNilError = errVal
 			cancel()
 		}
 	}
-	return errVal
+	if firstNonNilError == nil {
+		return ErrKnown{"nil", "nil", "nil", nil}
+	}
+	return firstNonNilError.(ErrKnown)
 }
 
 func main() {
@@ -225,6 +275,19 @@ func main() {
 	cli, err := client.NewEnvClient()
 	dieOnErr(err)
 	testcases := loadTestCases(problemsDir, payloadExample)
-	err = EvaluateAll(cli, testcases)
-	log.Printf("Finally, in main: %v", err)
+	knwonErr := EvaluateAll(cli, testcases)
+	log.Printf("Finally, in main: %v", knwonErr)
+	result := &Result{}
+	switch knwonErr.Type {
+	case "nil":
+		result.Status = Pass
+		result.Details = ""
+	case "stdout":
+		result.Status = Fail
+		result.Details = knwonErr.LongDesc
+	case "stderr":
+		result.Status = Fail
+		result.Details = knwonErr.LongDesc
+	}
+	log.Printf("Output: %v", result)
 }
