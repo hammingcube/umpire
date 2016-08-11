@@ -247,7 +247,7 @@ func evaluateAll(cli *client.Client, payload *Payload, testcases []*TestCase, st
 	return firstNonNilError.(ErrKnown)
 }
 
-func Judge(payload *Payload) {
+func Judge(payload *Payload) *Result {
 	problemsDir := "/Users/madhavjha/src/github.com/maddyonline/problems"
 	cli, err := client.NewEnvClient()
 	dieOnErr(err)
@@ -267,6 +267,7 @@ func Judge(payload *Payload) {
 		result.Details = knwonErr.LongDesc
 	}
 	log.Printf("Output: %v", result)
+	return result
 }
 
 func solve(payload *Payload, w io.Writer) error {
@@ -291,7 +292,7 @@ func Solution(payload *Payload, stdout io.Writer) error {
 	return DockerRun(cli, v, stdout)
 }
 
-func Run(payload *Payload, stdout, stderr io.Writer) {
+func Run(payload *Payload, stdout, stderr io.Writer) *Result {
 	cli, err := client.NewEnvClient()
 	dieOnErr(err)
 	r, w := io.Pipe()
@@ -318,4 +319,5 @@ func Run(payload *Payload, stdout, stderr io.Writer) {
 		result.Details = knwonErr.LongDesc
 	}
 	log.Printf("Output: %v", result)
+	return result
 }
