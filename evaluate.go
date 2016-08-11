@@ -56,7 +56,7 @@ type DockerEvalResult struct {
 	Cleanup     func() error
 }
 
-func DockerEval(ctx context.Context, cli *client.Client, payload *Payload) (*DockerEvalResult, error) {
+func dockerEval(ctx context.Context, cli *client.Client, payload *Payload) (*DockerEvalResult, error) {
 	cfg := configMap[payload.Language]
 	config := &container.Config{
 		Image:       cfg.Image,

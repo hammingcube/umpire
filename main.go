@@ -114,7 +114,7 @@ func (v ErrMismatch) Error() string {
 	return "Mismatched"
 }
 
-func Evaluate(ctx context.Context, cli *client.Client, payload *Payload, testNum int, testcase *TestCase, stdoutWriter, stderrWriter io.Writer) error {
+func evaluate(ctx context.Context, cli *client.Client, payload *Payload, testNum int, testcase *TestCase, stdoutWriter, stderrWriter io.Writer) error {
 	workDir, err := createDirectoryWithFiles(payload.Files)
 	if err != nil {
 		return err
@@ -130,7 +130,7 @@ func Evaluate(ctx context.Context, cli *client.Client, payload *Payload, testNum
 	payloadToSend := &Payload{}
 	*payloadToSend = *payload
 	payloadToSend.Stdin = string(testcaseData)
-	result, err := DockerEval(ctx, cli, payloadToSend)
+	result, err := dockerEval(ctx, cli, payloadToSend)
 	if err != nil {
 		return err
 	}
@@ -232,7 +232,7 @@ func loadTestCases(problemsDir string, payload *Payload) []*TestCase {
 	return testcases
 }
 
-func EvaluateAll(cli *client.Client, payload *Payload, testcases []*TestCase, stdout, stderr io.Writer) ErrKnown {
+func evaluateAll(cli *client.Client, payload *Payload, testcases []*TestCase, stdout, stderr io.Writer) ErrKnown {
 	ctx, cancel := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
 	errorChan := make(chan error)
@@ -243,7 +243,7 @@ func EvaluateAll(cli *client.Client, payload *Payload, testcases []*TestCase, st
 				log.Printf("Done evaluating testcase %d", i)
 				wg.Done()
 			}()
-			err := Evaluate(ctx, cli, payload, i, testcase, stdout, stderr)
+			err := evaluate(ctx, cli, payload, i, testcase, stdout, stderr)
 			if err != nil {
 				log.Printf("In evaluateAll, evaluate error: %v", err)
 			}
@@ -274,7 +274,7 @@ func Judge() {
 	cli, err := client.NewEnvClient()
 	dieOnErr(err)
 	testcases := loadTestCases(problemsDir, payloadExample)
-	knwonErr := EvaluateAll(cli, payloadExample, testcases, ioutil.Discard, ioutil.Discard)
+	knwonErr := evaluateAll(cli, payloadExample, testcases, ioutil.Discard, ioutil.Discard)
 	log.Printf("Finally, in main: %v", knwonErr)
 	result := &Result{}
 	switch knwonErr.Type {
