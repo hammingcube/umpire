@@ -56,6 +56,19 @@ type DockerEvalResult struct {
 	Cleanup     func() error
 }
 
+func DockerRun(cli *client.Client, payload *Payload, w io.Writer) error {
+	dockerEvalResult, err := dockerEval(context.Background(), cli, payload)
+	if err != nil {
+		return err
+	}
+	go func() {
+		io.Copy(w, dockerEvalResult.Stdout)
+	}()
+	defer dockerEvalResult.Cleanup()
+	<-dockerEvalResult.Done
+	return nil
+}
+
 func dockerEval(ctx context.Context, cli *client.Client, payload *Payload) (*DockerEvalResult, error) {
 	cfg := configMap[payload.Language]
 	config := &container.Config{

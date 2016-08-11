@@ -3,7 +3,7 @@ package umpire
 import (
 	"bufio"
 	"bytes"
-	_ "encoding/json"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/docker/engine-api/client"
@@ -38,9 +38,10 @@ func dieOnErr(err error) {
 }
 
 type TestCase struct {
-	Input    io.Reader
-	Expected io.Reader
-	Id       string
+	Input      io.Reader
+	Expected   io.Reader
+	Id         string
+	fromDocker bool
 }
 
 type RunStatus string
@@ -122,6 +123,9 @@ func evaluate(ctx context.Context, cli *client.Client, payload *Payload, testNum
 			scanner2.Scan()
 			text1, text2 := scanner1.Text(), scanner2.Text()
 			text1 = text1[8:] // <---NOTE: SOME DOCKER QUIRK
+			if testcase.fromDocker {
+				text2 = text2[8:]
+			}
 			log.Printf("output: %s, expected: %s", text1, text2)
 			if text1 != text2 {
 				log.Printf("->%v<->%v<->%v<-", []byte(text1), []byte(text2), text1 == text2)
@@ -200,7 +204,7 @@ func loadTestCases(problemsDir string, payload *Payload) []*TestCase {
 			dieOnErr(err)
 			expected, err := os.Open(filepath.Join(problemsDir, payload.Problem.Id, "testcases", expectedFilename))
 			dieOnErr(err)
-			testcases = append(testcases, &TestCase{input, expected, inputFilename})
+			testcases = append(testcases, &TestCase{input, expected, inputFilename, false})
 		}
 	}
 	return testcases
@@ -265,8 +269,26 @@ func Judge(payload *Payload) {
 	log.Printf("Output: %v", result)
 }
 
-func solve(id string, w io.Writer) {
-	io.Copy(w, strings.NewReader("5\n2\n"))
+func solve(payload *Payload, w io.Writer) error {
+	return Solution(payload, w)
+}
+
+func Solution(payload *Payload, stdout io.Writer) error {
+	problemsDir := "/Users/madhavjha/src/github.com/maddyonline/problems"
+	cli, err := client.NewEnvClient()
+	if err != nil {
+		return err
+	}
+	data, err := ioutil.ReadFile(filepath.Join(problemsDir, payload.Problem.Id, "solution.json"))
+	if err != nil {
+		return err
+	}
+	v := &Payload{}
+	err = json.Unmarshal(data, v)
+	if err != nil {
+		return err
+	}
+	return DockerRun(cli, v, stdout)
 }
 
 func Run(payload *Payload, stdout, stderr io.Writer) {
@@ -274,11 +296,12 @@ func Run(payload *Payload, stdout, stderr io.Writer) {
 	dieOnErr(err)
 	r, w := io.Pipe()
 	go func() {
-		solve(payload.Problem.Id, w)
+		solve(payload, w)
 	}()
 	testcases := []*TestCase{&TestCase{
-		Input:    strings.NewReader(payload.Stdin),
-		Expected: r,
+		Input:      strings.NewReader(payload.Stdin),
+		Expected:   r,
+		fromDocker: true,
 	}}
 	knwonErr := evaluateAll(cli, payload, testcases, stdout, stderr)
 	log.Printf("Finally, in main: %v", knwonErr)

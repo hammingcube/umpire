@@ -1,8 +1,11 @@
 package main
 
 import (
+	"bytes"
+	"fmt"
+	"github.com/docker/engine-api/client"
 	"github.com/maddyonline/umpire"
-	_ "os"
+	"os"
 )
 
 const CPP_CODE = `# include <iostream>
@@ -31,7 +34,22 @@ var payloadExample = &umpire.Payload{
 	Stdin: "hello\nhi\n",
 }
 
+func exampleDockerRun() {
+	cli, _ := client.NewEnvClient()
+	err := umpire.DockerRun(cli, payloadExample, os.Stdout)
+	if err != nil {
+		fmt.Printf("%v", err)
+	}
+}
+
+func exampleRun() {
+	var b1, b2 bytes.Buffer
+	umpire.Run(payloadExample, &b1, &b2)
+	fmt.Printf("%s", b1.String())
+	//umpire.Judge(payloadExample)
+}
+
 func main() {
-	//umpire.Run(payloadExample, os.Stdout, os.Stderr)
+	//exampleDockerRun()
 	umpire.Judge(payloadExample)
 }
