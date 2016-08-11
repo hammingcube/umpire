@@ -115,7 +115,7 @@ func (v ErrMismatch) Error() string {
 	return "Mismatched"
 }
 
-func Evaluate(ctx context.Context, cli *client.Client, payload *judge.Payload, testNum int, testcase *TestCase) error {
+func Evaluate(ctx context.Context, cli *client.Client, payload *judge.Payload, testNum int, testcase *TestCase, stdoutWriter, stderrWriter io.Writer) error {
 	workDir, err := createDirectoryWithFiles(payload.Files)
 	if err != nil {
 		return err
@@ -143,7 +143,7 @@ func Evaluate(ctx context.Context, cli *client.Client, payload *judge.Payload, t
 
 	stdoutChan := make(chan error)
 	go func() {
-		scanner1 := bufio.NewScanner(result.Stdout)
+		scanner1 := bufio.NewScanner(io.TeeReader(result.Stdout, stdoutWriter))
 		scanner2 := bufio.NewScanner(testcase.Expected)
 		for scanner1.Scan() {
 			scanner2.Scan()
@@ -170,7 +170,7 @@ func Evaluate(ctx context.Context, cli *client.Client, payload *judge.Payload, t
 	stderrChan := make(chan error)
 	go func() {
 		var b bytes.Buffer
-		n, err := io.Copy(&b, result.Stderr)
+		n, err := io.Copy(&b, io.TeeReader(result.Stderr, stderrWriter))
 		log.Printf("stderr: %d %v", n, err)
 		if err != nil {
 			stderrChan <- ErrKnown{"stderr", "io copy", err.Error(), err}
@@ -233,7 +233,7 @@ func loadTestCases(problemsDir string, payload *judge.Payload) []*TestCase {
 	return testcases
 }
 
-func EvaluateAll(cli *client.Client, testcases []*TestCase) ErrKnown {
+func EvaluateAll(cli *client.Client, payload *judge.Payload, testcases []*TestCase, stdout, stderr io.Writer) ErrKnown {
 	ctx, cancel := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
 	errorChan := make(chan error)
@@ -244,7 +244,7 @@ func EvaluateAll(cli *client.Client, testcases []*TestCase) ErrKnown {
 				log.Printf("Done evaluating testcase %d", i)
 				wg.Done()
 			}()
-			err := Evaluate(ctx, cli, payloadExample, i, testcase)
+			err := Evaluate(ctx, cli, payload, i, testcase, stdout, stderr)
 			if err != nil {
 				log.Printf("In evaluateAll, evaluate error: %v", err)
 			}
@@ -275,7 +275,7 @@ func main() {
 	cli, err := client.NewEnvClient()
 	dieOnErr(err)
 	testcases := loadTestCases(problemsDir, payloadExample)
-	knwonErr := EvaluateAll(cli, testcases)
+	knwonErr := EvaluateAll(cli, payloadExample, testcases, ioutil.Discard, ioutil.Discard)
 	log.Printf("Finally, in main: %v", knwonErr)
 	result := &Result{}
 	switch knwonErr.Type {
