@@ -1,4 +1,4 @@
-package main
+package umpire
 
 import (
 	"bufio"
@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/docker/engine-api/client"
-	"github.com/maddyonline/umpire/judge"
 	"golang.org/x/net/context"
 	"io"
 	"io/ioutil"
@@ -45,11 +44,11 @@ int main() {
   }
 }`
 
-var payloadExample = &judge.Payload{
-	Problem:  &judge.Problem{"problem-1"},
+var payloadExample = &Payload{
+	Problem:  &Problem{"problem-1"},
 	Language: "cpp",
-	Files: []*judge.InMemoryFile{
-		&judge.InMemoryFile{
+	Files: []*InMemoryFile{
+		&InMemoryFile{
 			Name:    "main.cpp",
 			Content: CPP_CODE,
 		},
@@ -93,7 +92,7 @@ func (v ErrKnown) Error() string {
 	return fmt.Sprintf("%s: %s", v.Type, v.ShortDesc)
 }
 
-func createDirectoryWithFiles(files []*judge.InMemoryFile) (*string, error) {
+func createDirectoryWithFiles(files []*InMemoryFile) (*string, error) {
 	dir, err := ioutil.TempDir(".", "work_dir_")
 	if err != nil {
 		return nil, err
@@ -115,7 +114,7 @@ func (v ErrMismatch) Error() string {
 	return "Mismatched"
 }
 
-func Evaluate(ctx context.Context, cli *client.Client, payload *judge.Payload, testNum int, testcase *TestCase, stdoutWriter, stderrWriter io.Writer) error {
+func Evaluate(ctx context.Context, cli *client.Client, payload *Payload, testNum int, testcase *TestCase, stdoutWriter, stderrWriter io.Writer) error {
 	workDir, err := createDirectoryWithFiles(payload.Files)
 	if err != nil {
 		return err
@@ -128,10 +127,10 @@ func Evaluate(ctx context.Context, cli *client.Client, payload *judge.Payload, t
 	if err != nil {
 		return err
 	}
-	payloadToSend := &judge.Payload{}
+	payloadToSend := &Payload{}
 	*payloadToSend = *payload
 	payloadToSend.Stdin = string(testcaseData)
-	result, err := judge.DockerEval(ctx, cli, payloadToSend)
+	result, err := DockerEval(ctx, cli, payloadToSend)
 	if err != nil {
 		return err
 	}
@@ -212,7 +211,7 @@ func Evaluate(ctx context.Context, cli *client.Client, payload *judge.Payload, t
 
 }
 
-func loadTestCases(problemsDir string, payload *judge.Payload) []*TestCase {
+func loadTestCases(problemsDir string, payload *Payload) []*TestCase {
 	testcases := []*TestCase{}
 	files, err := ioutil.ReadDir(filepath.Join(problemsDir, payload.Problem.Id, "testcases"))
 	if err != nil {
@@ -233,7 +232,7 @@ func loadTestCases(problemsDir string, payload *judge.Payload) []*TestCase {
 	return testcases
 }
 
-func EvaluateAll(cli *client.Client, payload *judge.Payload, testcases []*TestCase, stdout, stderr io.Writer) ErrKnown {
+func EvaluateAll(cli *client.Client, payload *Payload, testcases []*TestCase, stdout, stderr io.Writer) ErrKnown {
 	ctx, cancel := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
 	errorChan := make(chan error)
@@ -270,7 +269,7 @@ func EvaluateAll(cli *client.Client, payload *judge.Payload, testcases []*TestCa
 	return firstNonNilError.(ErrKnown)
 }
 
-func main() {
+func Judge() {
 	problemsDir := "/Users/madhavjha/src/github.com/maddyonline/problems"
 	cli, err := client.NewEnvClient()
 	dieOnErr(err)

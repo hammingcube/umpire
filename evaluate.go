@@ -1,4 +1,4 @@
-package judge
+package umpire
 
 import (
 	"encoding/json"
