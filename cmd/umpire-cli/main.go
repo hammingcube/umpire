@@ -45,11 +45,12 @@ func exampleDockerRun() {
 func exampleRun() {
 	var b1, b2 bytes.Buffer
 	umpire.Run(payloadExample, &b1, &b2)
-	fmt.Printf("%s", b1.String())
+	fmt.Printf("%q", b1.String())
 	//umpire.Judge(payloadExample)
 }
 
 func main() {
 	//exampleDockerRun()
-	umpire.Judge(payloadExample)
+	exampleRun()
+	//umpire.Judge(payloadExample)
 }

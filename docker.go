@@ -1,6 +1,7 @@
 package umpire
 
 import (
+	"bufio"
 	"encoding/json"
 	"github.com/docker/engine-api/client"
 	"github.com/docker/engine-api/types"
@@ -69,7 +70,15 @@ func DockerRun(cli *client.Client, payload *Payload, w io.Writer) error {
 		return err
 	}
 	go func() {
-		io.Copy(w, dockerEvalResult.Stdout)
+		scanner := bufio.NewScanner(dockerEvalResult.Stdout)
+		for scanner.Scan() {
+			text := scanner.Text()
+			n, err := w.Write([]byte(text[8:] + "\n"))
+			if n != len(text[8:])+1 || (err != nil && err != io.EOF) {
+				log.Fatal("Error while writing: %d %d %v", len(text[8:])+1, n, err)
+			}
+		}
+		//io.Copy(w)
 	}()
 	defer dockerEvalResult.Cleanup()
 	<-dockerEvalResult.Done

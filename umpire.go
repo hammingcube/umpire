@@ -296,15 +296,16 @@ func Run(payload *Payload, stdout, stderr io.Writer) *Result {
 	cli, err := client.NewEnvClient()
 	dieOnErr(err)
 	r, w := io.Pipe()
+	mw := io.MultiWriter(w, stdout)
 	go func() {
-		solve(payload, w)
+		solve(payload, mw)
 	}()
 	testcases := []*TestCase{&TestCase{
 		Input:      strings.NewReader(payload.Stdin),
 		Expected:   r,
-		fromDocker: true,
+		fromDocker: false,
 	}}
-	knwonErr := evaluateAll(cli, payload, testcases, stdout, stderr)
+	knwonErr := evaluateAll(cli, payload, testcases, ioutil.Discard, ioutil.Discard)
 	log.Printf("Finally, in main: %v", knwonErr)
 	result := &Result{}
 	switch knwonErr.Type {
