@@ -15,7 +15,7 @@ import (
 	"net"
 	_ "os"
 	_ "strings"
-	"sync"
+	//"sync"
 	"time"
 )
 
@@ -55,6 +55,15 @@ func writeConn(conn net.Conn, data []byte) error {
 		if c == 0 || start == len(data) {
 			break
 		}
+	}
+	return nil
+}
+
+func SpecialWrite(w io.Writer, text string) error {
+	n, err := w.Write([]byte(text + "\n"))
+	if n != len(text)+1 || (err != nil && err != io.EOF) {
+		errorMsg := fmt.Sprintf("Error while writing %d bytes, wrote only %d bytes. Err: %v", len(text)+1, n, err)
+		return errors.New(errorMsg)
 	}
 	return nil
 }
@@ -100,10 +109,11 @@ func DockerJudge(ctx context.Context, cli *client.Client, payload *Payload, wStd
 	if err != nil {
 		return err
 	}
+	errChan := make(chan error)
 	var stdoutErr, stderrErr error
-	var wg sync.WaitGroup
+	//var wg sync.WaitGroup
 	readWrite := func(readFrom io.ReadCloser, writeTo io.Writer, workingOn string) {
-		defer func() { wg.Done() }()
+		//defer func() { wg.Done() }()
 		r, w := io.Pipe()
 		mw := io.MultiWriter(writeTo, w)
 		go func() {
@@ -122,6 +132,7 @@ func DockerJudge(ctx context.Context, cli *client.Client, payload *Payload, wStd
 				if text1 != text2 {
 					log.Printf("got stdout error: %s %s", text1, text2)
 					stdoutErr = errors.New(fmt.Sprintf("Mismatch Error: got %s, expected %s", text1, text2))
+					errChan <- stdoutErr
 					return
 				}
 			} else if workingOn == "stderr" {
@@ -129,24 +140,27 @@ func DockerJudge(ctx context.Context, cli *client.Client, payload *Payload, wStd
 				if len(text) > 0 {
 					log.Printf("got stderr error: %s", text)
 					stderrErr = errors.New(fmt.Sprintf("Stderr: %s", text))
+					errChan <- stderrErr
 					return
 				}
 			}
 		}
 	}
-	wg.Add(2)
+	//wg.Add(2)
 	go readWrite(dockerEvalResult.Stdout, wStdout, "stdout")
 	go readWrite(dockerEvalResult.Stderr, wStderr, "stderr")
-	go func() {
-		wg.Wait()
-		log.Printf("Finished both read-write jobs")
-	}()
+	// go func() {
+	// 	wg.Wait()
+	// 	log.Printf("Finished both read-write jobs")
+	// }()
 	select {
 	case <-dockerEvalResult.Done:
 	case <-ctx.Done():
 		log.Printf("Context cancelled")
 		dockerEvalResult.Cleanup()
 		return errors.New("Context cancelled")
+	case err := <-errChan:
+		return err
 	}
 
 	if stderrErr != nil {

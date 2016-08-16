@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"bytes"
 	"fmt"
 	"github.com/docker/engine-api/client"
 	"github.com/maddyonline/umpire"
@@ -23,7 +22,7 @@ using namespace std;
 int main() {
   string s;
   while(cin >> s) {
-  	std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  	std::this_thread::sleep_for(std::chrono::milliseconds(10));
     cout << s.size() << endl;
   }
 }`
@@ -104,19 +103,13 @@ func exampleDockerJudgeMulti() error {
 	//log.Printf("successes: %d", sum)
 }
 
-func exampleRun() {
-	var b2 bytes.Buffer
-	result := umpire.Run(payloadExample, os.Stdout, &b2)
-	fmt.Printf("result: %v\n", result)
-	//fmt.Printf("stderr: %q\n", b2.String())
-	//umpire.Judge(payloadExample)
-}
-
 func main() {
 	//exampleDockerRun()
 	//exampleDockerJudge()
-	log.Printf("In main: %v", exampleDockerJudgeMulti())
+	//log.Printf("In main: %v", exampleDockerJudgeMulti())
 
 	//exampleRun()
-	//umpire.Judge(payloadExample)
+	cli, _ := client.NewEnvClient()
+	//umpire.JudgeAll(context.Background(), cli, payloadExample, ioutil.Discard, ioutil.Discard)
+	umpire.RunClient(context.Background(), cli, payloadExample, os.Stdout, os.Stderr)
 }

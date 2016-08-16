@@ -33,7 +33,7 @@ func createUser(c echo.Context) error {
 	}
 	done := make(chan interface{})
 	go func() {
-		done <- umpire.Judge(payload)
+		done <- struct{}{} //umpire.JudgeAll(context.Bac, cli, payload, os.Stdout, os.Stderr)
 	}()
 	for {
 		select {
