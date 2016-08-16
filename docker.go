@@ -68,8 +68,8 @@ type DockerEvalResult struct {
 	Cleanup     func() error
 }
 
-func DockerRun(cli *client.Client, payload *Payload, wStdout io.Writer, wStderr io.Writer) error {
-	dockerEvalResult, err := dockerEval(context.Background(), cli, payload)
+func DockerRun(ctx context.Context, cli *client.Client, payload *Payload, wStdout io.Writer, wStderr io.Writer) error {
+	dockerEvalResult, err := dockerEval(ctx, cli, payload)
 	defer dockerEvalResult.Cleanup()
 	if err != nil {
 		return err
@@ -94,7 +94,7 @@ func DockerRun(cli *client.Client, payload *Payload, wStdout io.Writer, wStderr 
 	return nil
 }
 
-func DockerJudge(cli *client.Client, payload *Payload, wStdout io.Writer, wStderr io.Writer, expected *bufio.Scanner) error {
+func DockerJudge(ctx context.Context, cli *client.Client, payload *Payload, wStdout io.Writer, wStderr io.Writer, expected *bufio.Scanner) error {
 	dockerEvalResult, err := dockerEval(context.Background(), cli, payload)
 	defer dockerEvalResult.Cleanup()
 	if err != nil {
@@ -141,8 +141,13 @@ func DockerJudge(cli *client.Client, payload *Payload, wStdout io.Writer, wStder
 		wg.Wait()
 		log.Printf("Finished both read-write jobs")
 	}()
-
-	<-dockerEvalResult.Done
+	select {
+	case <-dockerEvalResult.Done:
+	case <-ctx.Done():
+		log.Printf("Context cancelled")
+		dockerEvalResult.Cleanup()
+		return errors.New("Context cancelled")
+	}
 
 	if stderrErr != nil {
 		return stderrErr

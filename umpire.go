@@ -1,8 +1,7 @@
 package umpire
 
 import (
-	"bufio"
-	"bytes"
+	// "bufio"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,7 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"time"
+	_ "time"
 )
 
 const basic_example = `{
@@ -89,6 +88,15 @@ func (v ErrMismatch) Error() string {
 	return "Mismatched"
 }
 
+func SpecialWrite(w io.Writer, text string) error {
+	n, err := w.Write([]byte(text + "\n"))
+	if n != len(text)+1 || (err != nil && err != io.EOF) {
+		errorMsg := fmt.Sprintf("Error while writing %d bytes, wrote only %d bytes. Err: %v", len(text)+1, n, err)
+		return errors.New(errorMsg)
+	}
+	return nil
+}
+
 func evaluate(ctx context.Context, cli *client.Client, payload *Payload, testNum int, testcase *TestCase, stdoutWriter, stderrWriter io.Writer) error {
 	workDir, err := createDirectoryWithFiles(payload.Files)
 	if err != nil {
@@ -105,87 +113,34 @@ func evaluate(ctx context.Context, cli *client.Client, payload *Payload, testNum
 	payloadToSend := &Payload{}
 	*payloadToSend = *payload
 	payloadToSend.Stdin = string(testcaseData)
-	result, err := dockerEval(ctx, cli, payloadToSend)
+	dockerEvalResult, err := dockerEval(ctx, cli, payloadToSend)
 	if err != nil {
 		return err
 	}
 	defer func() {
-		if err := result.Cleanup(); err != nil {
+		if err := dockerEvalResult.Cleanup(); err != nil {
 			log.Fatal("Error cleaning up container: %v", err)
 		}
 	}()
-
-	stdoutChan := make(chan error)
 	go func() {
-		scanner1 := bufio.NewScanner(io.TeeReader(result.Stdout, stdoutWriter))
-		scanner2 := bufio.NewScanner(testcase.Expected)
-		for scanner1.Scan() {
-			scanner2.Scan()
-			text1, text2 := scanner1.Text(), scanner2.Text()
-			text1 = text1[8:] // <---NOTE: SOME DOCKER QUIRK
-			if testcase.fromDocker {
-				text2 = text2[8:]
-			}
-			log.Printf("output: %s, expected: %s", text1, text2)
-			if text1 != text2 {
-				log.Printf("->%v<->%v<->%v<-", []byte(text1), []byte(text2), text1 == text2)
-				longDesc := fmt.Sprintf("On input %s: got %s, expected: %s", testcase.Id, text1, text2)
-				stdoutChan <- ErrKnown{"stdout", "mismatch", longDesc, ErrMismatch{}}
-				return
-			}
-			for _, scanner := range []*bufio.Scanner{scanner1, scanner2} {
-				if err := scanner.Err(); err != nil {
-					log.Printf("scanner err: %v", err)
-					stdoutChan <- ErrKnown{"stdout", "mismatch", err.Error(), err}
-					return
-				}
-			}
-		}
-		stdoutChan <- nil
+		io.Copy(os.Stdout, dockerEvalResult.Stdout)
 	}()
+	// ch := make(chan struct{})
+	// go func() {
+	// 	scanner := bufio.NewScanner(r)
+	// 	for scanner.Scan() {
+	// 		fmt.Println(scanner.Text())
+	// 		if scanner.Err() != nil {
+	// 			fmt.Printf("Scanner Err: %v", scanner.Err())
+	// 		}
+	// 	}
+	// 	ch <- struct{}{}
+	// }()
 
-	stderrChan := make(chan error)
-	go func() {
-		var b bytes.Buffer
-		n, err := io.Copy(&b, io.TeeReader(result.Stderr, stderrWriter))
-		log.Printf("stderr: %d %v", n, err)
-		if err != nil {
-			stderrChan <- ErrKnown{"stderr", "io copy", err.Error(), err}
-			return
-		}
-		if n > 0 {
-			stderrChan <- ErrKnown{"stderr", "running program", b.String(), errors.New(b.String())}
-			return
-		}
-		stderrChan <- nil
-	}()
-
-	for {
-		select {
-		case <-result.Done:
-			log.Println("Done with execution")
-		case <-time.After(2 * time.Second):
-			log.Println("Still going...")
-			// result.cancel()
-		case errStdout := <-stdoutChan:
-			if errStdout != nil {
-				log.Printf("Quitting: %s", errStdout)
-				return errStdout
-			}
-			log.Printf("Returning nil (stdout)")
-			return nil
-		case errStderr := <-stderrChan:
-			if errStderr != nil {
-				log.Printf("Quitting: %s", errStderr)
-				return errStderr
-			}
-		case <-ctx.Done():
-			log.Printf("Quitting due to context cancellation")
-			result.Cancel()
-			log.Printf("Returning nil (context)")
-			return nil
-		}
-	}
+	<-dockerEvalResult.Done
+	//<-ch
+	//fmt.Printf("b: %q\n", b.String())
+	return ErrKnown{}
 
 }
 
@@ -289,25 +244,33 @@ func Solution(payload *Payload, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
-	return DockerRun(cli, v, stdout)
+	return DockerRun(context.Background(), cli, v, stdout, os.Stderr)
 }
 
 func Run(payload *Payload, stdout, stderr io.Writer) *Result {
 	cli, err := client.NewEnvClient()
 	dieOnErr(err)
 	r, w := io.Pipe()
-	mw := io.MultiWriter(w, stdout)
+	solveErr := make(chan error)
 	go func() {
-		solve(payload, mw)
+		solveErr <- solve(payload, w)
 	}()
 	testcases := []*TestCase{&TestCase{
 		Input:      strings.NewReader(payload.Stdin),
 		Expected:   r,
 		fromDocker: false,
 	}}
-	knwonErr := evaluateAll(cli, payload, testcases, ioutil.Discard, ioutil.Discard)
+	knwonErr := evaluateAll(cli, payload, testcases, stdout, ioutil.Discard)
 	log.Printf("Finally, in main: %v", knwonErr)
 	result := &Result{}
+	fmt.Printf("here")
+	solveError := <-solveErr
+	fmt.Printf("not here")
+	if solveError != nil {
+		result.Status = Fail
+		result.Details = solveError.Error()
+		return result
+	}
 	switch knwonErr.Type {
 	case "nil":
 		result.Status = Pass
