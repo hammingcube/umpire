@@ -40,31 +40,33 @@ var payloadExample = &umpire.Payload{
 	Stdin: "hello\nhi\n",
 }
 
-func exampleDockerRun() {
+func exampleDockerRun() error {
 	cli, _ := client.NewEnvClient()
 	err := umpire.DockerRun(context.Background(), cli, payloadExample, os.Stdout, os.Stderr)
 	if err != nil {
 		fmt.Printf("%v\n", err)
 	}
+	return err
 }
 
-func exampleDockerJudge() {
+func exampleDockerJudge() error {
 	cli, _ := client.NewEnvClient()
 	expected := strings.NewReader("5\n2\n")
 	err := umpire.DockerJudge(context.Background(), cli, payloadExample, os.Stdout, ioutil.Discard, bufio.NewScanner(expected))
 	if err != nil {
 		fmt.Printf("%v\n", err)
 	}
+	return err
 }
 
-func exampleDockerJudgeMulti() {
+func exampleDockerJudgeMulti() error {
 	cli, _ := client.NewEnvClient()
 	var wg sync.WaitGroup
 	ctx, cancel := context.WithCancel(context.Background())
-	succ := 0
-	for i := 0; i < 20; i++ {
+	errors := make(chan error)
+	for i := 0; i < 30; i++ {
 		wg.Add(1)
-		go func(i int) {
+		go func(ctx context.Context, i int) {
 			defer wg.Done()
 			expected := strings.NewReader("5\n2\n")
 
@@ -72,18 +74,34 @@ func exampleDockerJudgeMulti() {
 				log.Printf("i: %d", i)
 				expected = strings.NewReader("4\n2\n")
 			}
-
-			err := umpire.DockerJudge(ctx, cli, payloadExample, os.Stdout, ioutil.Discard, bufio.NewScanner(expected))
-			if err != nil {
-				fmt.Printf("%v\n", err)
-				cancel()
-			} else {
-				succ += 1
+			select {
+			case errors <- umpire.DockerJudge(ctx, cli, payloadExample, os.Stdout, ioutil.Discard, bufio.NewScanner(expected)):
+			case <-ctx.Done():
+				log.Printf("Context has been cancelled, returning")
 			}
-		}(i)
+		}(ctx, i)
 	}
-	wg.Wait()
-	log.Printf("successes: %d", succ)
+	go func() {
+		wg.Wait()
+		close(errors)
+	}()
+	//sum := 0
+	var finalErr error
+	var fail int
+	for err := range errors {
+		if err != nil {
+			fail += 1
+			if !strings.Contains(err.Error(), "Context cancelled") {
+				finalErr = err
+			}
+		}
+		if err != nil && strings.Contains(err.Error(), "Mismatch") {
+			cancel()
+		}
+	}
+	log.Printf("Fail: %d", fail)
+	return finalErr
+	//log.Printf("successes: %d", sum)
 }
 
 func exampleRun() {
@@ -97,7 +115,7 @@ func exampleRun() {
 func main() {
 	//exampleDockerRun()
 	//exampleDockerJudge()
-	exampleDockerJudgeMulti()
+	log.Printf("In main: %v", exampleDockerJudgeMulti())
 
 	//exampleRun()
 	//umpire.Judge(payloadExample)
