@@ -109,7 +109,12 @@ func main() {
 	//log.Printf("In main: %v", exampleDockerJudgeMulti())
 
 	//exampleRun()
-	cli, _ := client.NewEnvClient()
-	//umpire.JudgeAll(context.Background(), cli, payloadExample, ioutil.Discard, ioutil.Discard)
-	umpire.RunClient(context.Background(), cli, payloadExample, os.Stdout, os.Stderr)
+	cli, err := client.NewEnvClient()
+	if err != nil {
+		log.Fatalf("%v", err)
+		return
+	}
+	err = umpire.JudgeAll(context.Background(), cli, payloadExample, ioutil.Discard, ioutil.Discard)
+	//err = umpire.RunClient(context.Background(), cli, payloadExample, os.Stdout, os.Stderr)
+	log.Printf("In main, got: %v", err)
 }
