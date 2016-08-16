@@ -3,6 +3,8 @@ package umpire
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"github.com/docker/engine-api/client"
 	"github.com/docker/engine-api/types"
 	"github.com/docker/engine-api/types/container"
@@ -11,8 +13,9 @@ import (
 	"io"
 	"log"
 	"net"
-	"os"
+	_ "os"
 	_ "strings"
+	"sync"
 	"time"
 )
 
@@ -65,8 +68,9 @@ type DockerEvalResult struct {
 	Cleanup     func() error
 }
 
-func DockerRun(cli *client.Client, payload *Payload, w io.Writer) error {
+func DockerRun(cli *client.Client, payload *Payload, wStdout io.Writer, wStderr io.Writer) error {
 	dockerEvalResult, err := dockerEval(context.Background(), cli, payload)
+	defer dockerEvalResult.Cleanup()
 	if err != nil {
 		return err
 	}
@@ -84,17 +88,68 @@ func DockerRun(cli *client.Client, payload *Payload, w io.Writer) error {
 			log.Printf("text: %q", text)
 		}
 	}
-	go readWrite(dockerEvalResult.Stdout, os.Stdout)
-	go readWrite(dockerEvalResult.Stderr, os.Stderr)
-
-	// go func() {
-	// 	io.Copy(os.Stdout, dockerEvalResult.Stdout)
-	// }()
-	// go func() {
-	// 	io.Copy(os.Stdout, dockerEvalResult.StdoutSpl)
-	// }()
-	defer dockerEvalResult.Cleanup()
+	go readWrite(dockerEvalResult.Stdout, wStdout)
+	go readWrite(dockerEvalResult.Stderr, wStderr)
 	<-dockerEvalResult.Done
+	return nil
+}
+
+func DockerJudge(cli *client.Client, payload *Payload, wStdout io.Writer, wStderr io.Writer, expected *bufio.Scanner) error {
+	dockerEvalResult, err := dockerEval(context.Background(), cli, payload)
+	defer dockerEvalResult.Cleanup()
+	if err != nil {
+		return err
+	}
+	var stdoutErr, stderrErr error
+	var wg sync.WaitGroup
+	readWrite := func(readFrom io.ReadCloser, writeTo io.Writer, workingOn string) {
+		defer func() { wg.Done() }()
+		r, w := io.Pipe()
+		mw := io.MultiWriter(writeTo, w)
+		go func() {
+			defer readFrom.Close()
+			defer r.Close()
+			io.Copy(mw, readFrom)
+		}()
+		scanner := bufio.NewScanner(r)
+		for scanner.Scan() {
+			if workingOn == "stdout" {
+				expected.Scan()
+				text1 := scanner.Text()
+				text2 := expected.Text()
+				log.Printf("got text: %q", text1)
+				log.Printf("want text: %q", text2)
+				if text1 != text2 {
+					log.Printf("got stdout error: %s %s", text1, text2)
+					stdoutErr = errors.New(fmt.Sprintf("Mismatch Error: got %s, expected %s", text1, text2))
+					return
+				}
+			} else if workingOn == "stderr" {
+				text := scanner.Text()
+				if len(text) > 0 {
+					log.Printf("got stderr error: %s", text)
+					stderrErr = errors.New(fmt.Sprintf("Stderr: %s", text))
+					return
+				}
+			}
+		}
+	}
+	wg.Add(2)
+	go readWrite(dockerEvalResult.Stdout, wStdout, "stdout")
+	go readWrite(dockerEvalResult.Stderr, wStderr, "stderr")
+	go func() {
+		wg.Wait()
+		log.Printf("Finished both read-write jobs")
+	}()
+
+	<-dockerEvalResult.Done
+
+	if stderrErr != nil {
+		return stderrErr
+	}
+	if stdoutErr != nil {
+		return stdoutErr
+	}
 	return nil
 }
 

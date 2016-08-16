@@ -1,11 +1,14 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"fmt"
 	"github.com/docker/engine-api/client"
 	"github.com/maddyonline/umpire"
+	"io/ioutil"
 	"os"
+	"strings"
 )
 
 const CPP_CODE = `# include <iostream>
@@ -36,21 +39,31 @@ var payloadExample = &umpire.Payload{
 
 func exampleDockerRun() {
 	cli, _ := client.NewEnvClient()
-	err := umpire.DockerRun(cli, payloadExample, os.Stdout)
+	err := umpire.DockerRun(cli, payloadExample, os.Stdout, os.Stderr)
 	if err != nil {
 		fmt.Printf("%v", err)
 	}
 }
 
+func exampleDockerJudge() {
+	cli, _ := client.NewEnvClient()
+	expected := strings.NewReader("5\n2\n")
+	err := umpire.DockerJudge(cli, payloadExample, os.Stdout, ioutil.Discard, bufio.NewScanner(expected))
+	if err != nil {
+		fmt.Printf("%v\n", err)
+	}
+}
+
 func exampleRun() {
-	var b1, b2 bytes.Buffer
-	umpire.Run(payloadExample, &b1, &b2)
-	fmt.Printf("%q", b1.String())
+	var b2 bytes.Buffer
+	result := umpire.Run(payloadExample, os.Stdout, &b2)
+	fmt.Printf("result: %v\n", result)
+	//fmt.Printf("stderr: %q\n", b2.String())
 	//umpire.Judge(payloadExample)
 }
 
 func main() {
-	//exampleDockerRun()
-	exampleRun()
+	exampleDockerJudge()
+	//exampleRun()
 	//umpire.Judge(payloadExample)
 }
