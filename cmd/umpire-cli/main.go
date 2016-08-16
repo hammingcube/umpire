@@ -29,7 +29,7 @@ int main() {
 }`
 
 var payloadExample = &umpire.Payload{
-	Problem:  &umpire.Problem{"problem-1"},
+	Problem:  &umpire.Problem{"maddyonline/problems/problem-1"},
 	Language: "cpp",
 	Files: []*umpire.InMemoryFile{
 		&umpire.InMemoryFile{
@@ -115,13 +115,13 @@ func main() {
 		log.Fatalf("%v", err)
 		return
 	}
-	problemsDir, err := filepath.Abs("../../maddyonline/problems")
+	problemsDir, err := filepath.Abs("../../")
 	if err != nil {
 		log.Fatalf("%v", err)
 		return
 	}
 	u := &umpire.Umpire{cli, problemsDir}
-	//err = u.JudgeAll(context.Background(), payloadExample, ioutil.Discard, ioutil.Discard)
-	err = u.RunAndJudge(context.Background(), payloadExample, os.Stdout, os.Stderr)
+	err = u.JudgeAll(context.Background(), payloadExample, ioutil.Discard, ioutil.Discard)
+	//err = u.RunAndJudge(context.Background(), payloadExample, os.Stdout, os.Stderr)
 	log.Printf("In main, got: %v", err)
 }
