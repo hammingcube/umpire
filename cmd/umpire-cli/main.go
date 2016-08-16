@@ -9,6 +9,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 )
@@ -114,7 +115,13 @@ func main() {
 		log.Fatalf("%v", err)
 		return
 	}
-	err = umpire.JudgeAll(context.Background(), cli, payloadExample, ioutil.Discard, ioutil.Discard)
-	//err = umpire.RunClient(context.Background(), cli, payloadExample, os.Stdout, os.Stderr)
+	problemsDir, err := filepath.Abs("../../maddyonline/problems")
+	if err != nil {
+		log.Fatalf("%v", err)
+		return
+	}
+	u := umpire.Umpire{cli, problemsDir}
+	//err = u.JudgeAll(context.Background(), payloadExample, ioutil.Discard, ioutil.Discard)
+	err = u.RunAndJudge(context.Background(), payloadExample, os.Stdout, os.Stderr)
 	log.Printf("In main, got: %v", err)
 }

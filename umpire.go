@@ -21,6 +21,11 @@ type TestCase struct {
 	Id       string
 }
 
+type Umpire struct {
+	Client      *client.Client
+	ProblemsDir string
+}
+
 func createDirectoryWithFiles(files []*InMemoryFile) (*string, error) {
 	dir, err := ioutil.TempDir(".", "work_dir_")
 	if err != nil {
@@ -60,11 +65,7 @@ func loadTestCases(problemsDir string, payload *Payload) ([]*TestCase, error) {
 	return testcases, nil
 }
 
-func RunIt(ctx context.Context, cli *client.Client, payload *Payload, stdout, stderr io.Writer) error {
-	return DockerRun(ctx, cli, payload, stdout, stderr)
-}
-
-func JudgeIt(ctx context.Context, cli *client.Client, payload *Payload, stdout, stderr io.Writer, testcase *TestCase) error {
+func (u *Umpire) JudgeTestcase(ctx context.Context, payload *Payload, stdout, stderr io.Writer, testcase *TestCase) error {
 	workDir, err := createDirectoryWithFiles(payload.Files)
 	if err != nil {
 		return err
@@ -80,15 +81,14 @@ func JudgeIt(ctx context.Context, cli *client.Client, payload *Payload, stdout, 
 	payloadToSend := &Payload{}
 	*payloadToSend = *payload
 	payloadToSend.Stdin = string(testcaseData)
-	return DockerJudge(ctx, cli, payloadToSend, stdout, stderr, bufio.NewScanner(testcase.Expected))
+	return DockerJudge(ctx, u.Client, payloadToSend, stdout, stderr, bufio.NewScanner(testcase.Expected))
 }
 
-func JudgeAll(ctx context.Context, cli *client.Client, payload *Payload, stdout, stderr io.Writer) error {
+func (u *Umpire) JudgeAll(ctx context.Context, payload *Payload, stdout, stderr io.Writer) error {
 	var wg sync.WaitGroup
 	ctx, cancel := context.WithCancel(ctx)
 	errors := make(chan error)
-	problemsDir := "/Users/madhavjha/src/github.com/maddyonline/problems"
-	testcases, err := loadTestCases(problemsDir, payload)
+	testcases, err := loadTestCases(u.ProblemsDir, payload)
 	if err != nil {
 		return err
 	}
@@ -96,7 +96,7 @@ func JudgeAll(ctx context.Context, cli *client.Client, payload *Payload, stdout,
 		wg.Add(1)
 		go func(ctx context.Context, i int, testcase *TestCase) {
 			defer wg.Done()
-			err := JudgeIt(ctx, cli, payload, ioutil.Discard, ioutil.Discard, testcase)
+			err := u.JudgeTestcase(ctx, payload, ioutil.Discard, ioutil.Discard, testcase)
 			log.Printf("testcase %d: %v", i, err)
 			if err != nil {
 				cancel()
@@ -125,11 +125,10 @@ func JudgeAll(ctx context.Context, cli *client.Client, payload *Payload, stdout,
 	return finalErr
 }
 
-func RunClient(ctx context.Context, cli *client.Client, payload *Payload, stdout, stderr io.Writer) error {
+func (u *Umpire) RunAndJudge(ctx context.Context, payload *Payload, stdout, stderr io.Writer) error {
 	r, w := io.Pipe()
 	go func(w io.Writer) {
-		problemsDir := "/Users/madhavjha/src/github.com/maddyonline/problems"
-		data, err := ioutil.ReadFile(filepath.Join(problemsDir, payload.Problem.Id, "solution.json"))
+		data, err := ioutil.ReadFile(filepath.Join(u.ProblemsDir, payload.Problem.Id, "solution.json"))
 		if err != nil {
 			return
 		}
@@ -138,11 +137,11 @@ func RunClient(ctx context.Context, cli *client.Client, payload *Payload, stdout
 		if err != nil {
 			return
 		}
-		RunIt(context.Background(), cli, payload, w, ioutil.Discard)
+		DockerRun(ctx, u.Client, payload, stdout, stderr)
 	}(w)
 	testcases := []*TestCase{&TestCase{
 		Input:    strings.NewReader(payload.Stdin),
 		Expected: r,
 	}}
-	return JudgeIt(context.Background(), cli, payload, stdout, stderr, testcases[0])
+	return u.JudgeTestcase(context.Background(), payload, stdout, stderr, testcases[0])
 }
