@@ -120,7 +120,7 @@ func main() {
 		log.Fatalf("%v", err)
 		return
 	}
-	u := umpire.Umpire{cli, problemsDir}
+	u := &umpire.Umpire{cli, problemsDir}
 	//err = u.JudgeAll(context.Background(), payloadExample, ioutil.Discard, ioutil.Discard)
 	err = u.RunAndJudge(context.Background(), payloadExample, os.Stdout, os.Stderr)
 	log.Printf("In main, got: %v", err)
