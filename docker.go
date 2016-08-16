@@ -11,6 +11,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"os"
 	_ "strings"
 	"time"
 )
@@ -58,8 +59,8 @@ func writeConn(conn net.Conn, data []byte) error {
 type DockerEvalResult struct {
 	containerId string
 	Done        chan struct{}
-	Stdout      io.Reader
-	Stderr      io.Reader
+	Stdout      io.ReadCloser
+	Stderr      io.ReadCloser
 	Cancel      context.CancelFunc
 	Cleanup     func() error
 }
@@ -69,17 +70,29 @@ func DockerRun(cli *client.Client, payload *Payload, w io.Writer) error {
 	if err != nil {
 		return err
 	}
-	go func() {
-		scanner := bufio.NewScanner(dockerEvalResult.Stdout)
+	readWrite := func(readFrom io.ReadCloser, writeTo io.Writer) {
+		r, w := io.Pipe()
+		mw := io.MultiWriter(writeTo, w)
+		go func() {
+			defer readFrom.Close()
+			defer r.Close()
+			io.Copy(mw, readFrom)
+		}()
+		scanner := bufio.NewScanner(r)
 		for scanner.Scan() {
 			text := scanner.Text()
-			n, err := w.Write([]byte(text[8:] + "\n"))
-			if n != len(text[8:])+1 || (err != nil && err != io.EOF) {
-				log.Fatal("Error while writing: %d %d %v", len(text[8:])+1, n, err)
-			}
+			log.Printf("text: %q", text)
 		}
-		//io.Copy(w)
-	}()
+	}
+	go readWrite(dockerEvalResult.Stdout, os.Stdout)
+	go readWrite(dockerEvalResult.Stderr, os.Stderr)
+
+	// go func() {
+	// 	io.Copy(os.Stdout, dockerEvalResult.Stdout)
+	// }()
+	// go func() {
+	// 	io.Copy(os.Stdout, dockerEvalResult.StdoutSpl)
+	// }()
 	defer dockerEvalResult.Cleanup()
 	<-dockerEvalResult.Done
 	return nil
@@ -152,8 +165,34 @@ func dockerEval(ctx context.Context, cli *client.Client, payload *Payload) (*Doc
 		}
 		done <- struct{}{}
 	}()
+
+	rStdout, wStdout := io.Pipe()
+	rStderr, wStderr := io.Pipe()
+
+	scanLines := func(r io.Reader, w io.Writer) {
+		defer wStdout.Close()
+		scanner := bufio.NewScanner(r)
+		for scanner.Scan() {
+			text := scanner.Text()
+			text = text[8:]
+			if len(text) > 0 {
+				if err := SpecialWrite(w, text); err != nil {
+					log.Fatalf("system err: %v", err)
+					return
+				}
+			}
+			if err := scanner.Err(); err != nil {
+				log.Fatalf("scanner err: %v", err)
+				return
+			}
+		}
+	}
+
+	go scanLines(stdout, wStdout)
+	go scanLines(stderr, wStderr)
+
 	cleanup := func() error {
 		return cli.ContainerRemove(context.Background(), containerId, types.ContainerRemoveOptions{Force: true})
 	}
-	return &DockerEvalResult{containerId, done, stdout, stderr, cancel, cleanup}, nil
+	return &DockerEvalResult{containerId, done, rStdout, rStderr, cancel, cleanup}, nil
 }
