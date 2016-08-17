@@ -2,6 +2,7 @@ package umpire
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"github.com/docker/engine-api/client"
 	"golang.org/x/net/context"
@@ -24,6 +25,20 @@ type TestCase struct {
 type Umpire struct {
 	Client      *client.Client
 	ProblemsDir string
+}
+
+type Decision string
+
+const (
+	Fail Decision = "fail"
+	Pass          = "pass"
+)
+
+type Response struct {
+	Status  Decision `json:"status"`
+	Details string   `json:"details"`
+	Stdout  string   `json:"stdout", omitempty`
+	Stderr  string   `json:"stderr", omitempty`
 }
 
 func createDirectoryWithFiles(files []*InMemoryFile) (*string, error) {
@@ -127,21 +142,47 @@ func (u *Umpire) JudgeAll(ctx context.Context, payload *Payload, stdout, stderr 
 
 func (u *Umpire) RunAndJudge(ctx context.Context, payload *Payload, stdout, stderr io.Writer) error {
 	r, w := io.Pipe()
-	go func(w io.Writer) {
+	correctlySolve := func(w io.Writer) {
 		data, err := ioutil.ReadFile(filepath.Join(u.ProblemsDir, payload.Problem.Id, "solution.json"))
 		if err != nil {
 			return
 		}
-		payload := &Payload{}
-		err = json.Unmarshal(data, payload)
+		payloadToSend := &Payload{}
+		err = json.Unmarshal(data, payloadToSend)
 		if err != nil {
 			return
 		}
-		DockerRun(ctx, u.Client, payload, stdout, stderr)
-	}(w)
-	testcases := []*TestCase{&TestCase{
+		payloadToSend.Stdin = payload.Stdin
+		DockerRun(ctx, u.Client, payloadToSend, w, ioutil.Discard)
+	}
+
+	go correctlySolve(w)
+
+	testcase := &TestCase{
 		Input:    strings.NewReader(payload.Stdin),
 		Expected: r,
-	}}
-	return u.JudgeTestcase(context.Background(), payload, stdout, stderr, testcases[0])
+	}
+	return u.JudgeTestcase(context.Background(), payload, stdout, stderr, testcase)
+}
+
+func JudgeDefault(u *Umpire, payload *Payload) *Response {
+	err := u.JudgeAll(context.Background(), payload, ioutil.Discard, ioutil.Discard)
+	if err != nil {
+		return &Response{
+			Status:  Fail,
+			Details: err.Error(),
+		}
+	}
+	return &Response{
+		Status: Pass,
+	}
+}
+
+func RunDefault(u *Umpire, payload *Payload) *Response {
+	var stdout, stderr bytes.Buffer
+	err := u.RunAndJudge(context.Background(), payload, &stdout, &stderr)
+	if err != nil {
+		return &Response{Fail, err.Error(), stdout.String(), stderr.String()}
+	}
+	return &Response{Pass, "Output is as expected", stdout.String(), stderr.String()}
 }

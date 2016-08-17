@@ -37,7 +37,7 @@ var payloadExample = &umpire.Payload{
 			Content: CPP_CODE,
 		},
 	},
-	Stdin: "hello\nhi\n",
+	Stdin: "her\nhim\nher\ncool",
 }
 
 func exampleDockerRun() error {
@@ -104,12 +104,23 @@ func exampleDockerJudgeMulti() error {
 	//log.Printf("successes: %d", sum)
 }
 
-func main() {
-	//exampleDockerRun()
-	//exampleDockerJudge()
-	//log.Printf("In main: %v", exampleDockerJudgeMulti())
+func exampleRunAndJudge() {
+	cli, err := client.NewEnvClient()
+	if err != nil {
+		log.Fatalf("%v", err)
+		return
+	}
+	problemsDir, err := filepath.Abs("../../")
+	if err != nil {
+		log.Fatalf("%v", err)
+		return
+	}
+	u := &umpire.Umpire{cli, problemsDir}
+	err = u.RunAndJudge(context.Background(), payloadExample, os.Stdout, ioutil.Discard)
+	log.Printf("In main, got: %v", err)
+}
 
-	//exampleRun()
+func exampleJudgeAll() {
 	cli, err := client.NewEnvClient()
 	if err != nil {
 		log.Fatalf("%v", err)
@@ -122,6 +133,16 @@ func main() {
 	}
 	u := &umpire.Umpire{cli, problemsDir}
 	err = u.JudgeAll(context.Background(), payloadExample, ioutil.Discard, ioutil.Discard)
-	//err = u.RunAndJudge(context.Background(), payloadExample, os.Stdout, os.Stderr)
 	log.Printf("In main, got: %v", err)
+}
+
+func main() {
+	//exampleDockerRun()
+	//exampleDockerJudge()
+	//log.Printf("In main: %v", exampleDockerJudgeMulti())
+
+	exampleRunAndJudge()
+
+	// //err = u.JudgeAll(context.Background(), payloadExample, ioutil.Discard, ioutil.Discard)
+
 }
