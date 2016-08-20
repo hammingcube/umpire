@@ -23,7 +23,7 @@ using namespace std;
 int main() {
   string s;
   while(cin >> s) {
-  	std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  	std::this_thread::sleep_for(std::chrono::milliseconds(5000));
     cout << s.size() << endl;
   }
 }`
@@ -115,7 +115,7 @@ func exampleRunAndJudge() {
 		log.Fatalf("%v", err)
 		return
 	}
-	u := &umpire.Umpire{cli, problemsDir}
+	u := &umpire.Agent{cli, problemsDir}
 	err = u.RunAndJudge(context.Background(), payloadExample, os.Stdout, ioutil.Discard)
 	log.Printf("In main, got: %v", err)
 }
@@ -131,7 +131,7 @@ func exampleJudgeAll() {
 		log.Fatalf("%v", err)
 		return
 	}
-	u := &umpire.Umpire{cli, problemsDir}
+	u := &umpire.Agent{cli, problemsDir}
 	err = u.JudgeAll(context.Background(), payloadExample, ioutil.Discard, ioutil.Discard)
 	log.Printf("In main, got: %v", err)
 }

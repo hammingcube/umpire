@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-var localUmpire *umpire.Umpire
+var localAgent *umpire.Agent
 
 func judge(c echo.Context) error {
 	payload := &umpire.Payload{}
@@ -22,7 +22,7 @@ func judge(c echo.Context) error {
 	log.Printf("payload: %v", payload)
 	done := make(chan interface{})
 	go func() {
-		done <- umpire.JudgeDefault(localUmpire, payload)
+		done <- umpire.JudgeDefault(localAgent, payload)
 	}()
 	for {
 		select {
@@ -43,7 +43,7 @@ func run(c echo.Context) error {
 	log.Printf("payload: %v", payload)
 	done := make(chan interface{})
 	go func() {
-		done <- umpire.RunDefault(localUmpire, payload)
+		done <- umpire.RunDefault(localAgent, payload)
 	}()
 	for {
 		select {
@@ -67,7 +67,7 @@ func main() {
 		log.Fatalf("%v", err)
 		return
 	}
-	localUmpire = &umpire.Umpire{cli, problemsDir}
+	localAgent = &umpire.Agent{cli, problemsDir}
 
 	e := echo.New()
 

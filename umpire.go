@@ -22,7 +22,7 @@ type TestCase struct {
 	Id       string
 }
 
-type Umpire struct {
+type Agent struct {
 	Client      *client.Client
 	ProblemsDir string
 }
@@ -80,7 +80,7 @@ func loadTestCases(problemsDir string, payload *Payload) ([]*TestCase, error) {
 	return testcases, nil
 }
 
-func (u *Umpire) JudgeTestcase(ctx context.Context, payload *Payload, stdout, stderr io.Writer, testcase *TestCase) error {
+func (u *Agent) JudgeTestcase(ctx context.Context, payload *Payload, stdout, stderr io.Writer, testcase *TestCase) error {
 	workDir, err := createDirectoryWithFiles(payload.Files)
 	if err != nil {
 		return err
@@ -99,7 +99,7 @@ func (u *Umpire) JudgeTestcase(ctx context.Context, payload *Payload, stdout, st
 	return DockerJudge(ctx, u.Client, payloadToSend, stdout, stderr, bufio.NewScanner(testcase.Expected))
 }
 
-func (u *Umpire) JudgeAll(ctx context.Context, payload *Payload, stdout, stderr io.Writer) error {
+func (u *Agent) JudgeAll(ctx context.Context, payload *Payload, stdout, stderr io.Writer) error {
 	var wg sync.WaitGroup
 	ctx, cancel := context.WithCancel(ctx)
 	errors := make(chan error)
@@ -140,7 +140,7 @@ func (u *Umpire) JudgeAll(ctx context.Context, payload *Payload, stdout, stderr 
 	return finalErr
 }
 
-func (u *Umpire) RunAndJudge(ctx context.Context, payload *Payload, stdout, stderr io.Writer) error {
+func (u *Agent) RunAndJudge(ctx context.Context, payload *Payload, stdout, stderr io.Writer) error {
 	r, w := io.Pipe()
 	correctlySolve := func(w io.Writer) {
 		data, err := ioutil.ReadFile(filepath.Join(u.ProblemsDir, payload.Problem.Id, "solution.json"))
@@ -165,7 +165,7 @@ func (u *Umpire) RunAndJudge(ctx context.Context, payload *Payload, stdout, stde
 	return u.JudgeTestcase(context.Background(), payload, stdout, stderr, testcase)
 }
 
-func JudgeDefault(u *Umpire, payload *Payload) *Response {
+func JudgeDefault(u *Agent, payload *Payload) *Response {
 	err := u.JudgeAll(context.Background(), payload, ioutil.Discard, ioutil.Discard)
 	if err != nil {
 		return &Response{
@@ -178,7 +178,7 @@ func JudgeDefault(u *Umpire, payload *Payload) *Response {
 	}
 }
 
-func RunDefault(u *Umpire, payload *Payload) *Response {
+func RunDefault(u *Agent, payload *Payload) *Response {
 	var stdout, stderr bytes.Buffer
 	err := u.RunAndJudge(context.Background(), payload, &stdout, &stderr)
 	if err != nil {

@@ -243,8 +243,8 @@ func dockerEval(ctx context.Context, cli *client.Client, payload *Payload) (*Doc
 	rStdout, wStdout := io.Pipe()
 	rStderr, wStderr := io.Pipe()
 
-	scanLines := func(r io.Reader, w io.Writer) {
-		defer wStdout.Close()
+	scanLines := func(r io.Reader, w io.WriteCloser) {
+		defer w.Close()
 		scanner := bufio.NewScanner(r)
 		for scanner.Scan() {
 			text := scanner.Text()
