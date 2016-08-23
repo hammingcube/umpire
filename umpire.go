@@ -3,7 +3,7 @@ package umpire
 import (
 	"bufio"
 	"bytes"
-	"encoding/json"
+	"errors"
 	"github.com/docker/engine-api/client"
 	"golang.org/x/net/context"
 	"io"
@@ -140,15 +140,72 @@ func (u *Agent) JudgeAll(ctx context.Context, payload *Payload, stdout, stderr i
 	return finalErr
 }
 
+func readFiles(files map[string]io.Reader) ([]*InMemoryFile, error) {
+	ans := []*InMemoryFile{}
+	for filename, file := range files {
+		data, err := ioutil.ReadAll(file)
+		if err != nil {
+			return nil, err
+		}
+		ans = append(ans, &InMemoryFile{filename, string(data)})
+	}
+	return ans, nil
+}
+
+func ReadSoln(dirname string) (*Payload, error) {
+	supported := map[string]bool{"cpp": true}
+	files, err := ioutil.ReadDir(dirname)
+	if err != nil {
+		return nil, err
+	}
+	var lang string
+	for _, file := range files {
+		if file.IsDir() && supported[file.Name()] {
+			lang = file.Name()
+			break
+		}
+	}
+	if lang == "" {
+		return nil, errors.New("Not Found")
+	}
+
+	dir := filepath.Join(dirname, lang)
+	srcFiles, err := ioutil.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	toRead := map[string]io.Reader{}
+	toClose := []io.ReadCloser{}
+	defer func() {
+		for _, f := range toClose {
+			f.Close()
+		}
+	}()
+	for _, srcFile := range srcFiles {
+		if !srcFile.IsDir() {
+			f, err := os.Open(filepath.Join(dir, srcFile.Name()))
+			if err != nil {
+				return nil, err
+			}
+			toClose = append(toClose, f)
+			toRead[srcFile.Name()] = f
+		}
+	}
+	inMemoryFiles, err := readFiles(toRead)
+	if err != nil {
+		return nil, err
+	}
+	payload := &Payload{
+		Language: lang,
+		Files:    inMemoryFiles,
+	}
+	return payload, nil
+}
+
 func (u *Agent) RunAndJudge(ctx context.Context, payload *Payload, stdout, stderr io.Writer) error {
 	r, w := io.Pipe()
 	correctlySolve := func(w io.Writer) {
-		data, err := ioutil.ReadFile(filepath.Join(u.ProblemsDir, payload.Problem.Id, "solution.json"))
-		if err != nil {
-			return
-		}
-		payloadToSend := &Payload{}
-		err = json.Unmarshal(data, payloadToSend)
+		payloadToSend, err := ReadSoln(filepath.Join(u.ProblemsDir, payload.Problem.Id, "solution"))
 		if err != nil {
 			return
 		}
