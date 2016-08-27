@@ -105,10 +105,10 @@ func DockerRun(ctx context.Context, cli *client.Client, payload *Payload, wStdou
 
 func DockerJudge(ctx context.Context, cli *client.Client, payload *Payload, wStdout io.Writer, wStderr io.Writer, expected *bufio.Scanner) error {
 	dockerEvalResult, err := dockerEval(context.Background(), cli, payload)
-	defer dockerEvalResult.Cleanup()
 	if err != nil {
 		return err
 	}
+	defer dockerEvalResult.Cleanup()
 	errChan := make(chan error)
 	var stdoutErr, stderrErr error
 	//var wg sync.WaitGroup
