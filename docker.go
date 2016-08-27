@@ -79,10 +79,10 @@ type DockerEvalResult struct {
 
 func DockerRun(ctx context.Context, cli *client.Client, payload *Payload, wStdout io.Writer, wStderr io.Writer) error {
 	dockerEvalResult, err := dockerEval(ctx, cli, payload)
-	defer dockerEvalResult.Cleanup()
 	if err != nil {
 		return err
 	}
+	defer dockerEvalResult.Cleanup()
 	readWrite := func(readFrom io.ReadCloser, writeTo io.Writer) {
 		r, w := io.Pipe()
 		mw := io.MultiWriter(writeTo, w)
