@@ -23,7 +23,8 @@ var configMap = map[string]struct {
 	Cmd   []string
 	Image string
 }{
-	"cpp": {[]string{"-stream=true"}, "phluent/clang"},
+	"cpp":    {[]string{"-stream=true"}, "phluent/clang"},
+	"python": {[]string{"-stream=true"}, "phluent/python"},
 }
 
 type Problem struct {
