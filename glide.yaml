@@ -11,3 +11,7 @@ import:
   version: ^3.0.0-beta.3
   subpackages:
   - middleware
+- package: github.com/labstack/gommon
+  version: ^0.1.0
+  subpackages:
+  - log

@@ -1,4 +1,15 @@
+Prerequisites
+```
+curl https://glide.sh/get | sh
+```
+
 Installation Steps
+
+```
+git clone https://github.com/maddyonline/umpire.git
+git clone https://github.com/maddyonline/problems.git
+
+```
 
 ```
 export DOCKER_API_VERSION=1.24
