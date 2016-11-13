@@ -118,16 +118,16 @@ func DockerJudge(ctx context.Context, cli *client.Client, payload *Payload, wStd
 	defer dockerEvalResult.Cleanup()
 	errChan := make(chan error)
 	var stdoutErr, stderrErr error
-	//var wg sync.WaitGroup
-	readWrite := func(readFrom io.ReadCloser, writeTo io.Writer, workingOn string) {
-		//defer func() { wg.Done() }()
+	var wg sync.WaitGroup
+	readWrite := func(readFrom io.ReadCloser, writeTo io.Writer, workingOn string, wg *sync.WaitGroup) {
 		r, w := io.Pipe()
 		mw := io.MultiWriter(writeTo, w)
-		go func() {
+		go func(wg *sync.WaitGroup) {
+			defer func() { wg.Done() }()
 			defer readFrom.Close()
 			defer r.Close()
 			io.Copy(mw, readFrom)
-		}()
+		}(wg)
 		scanner := bufio.NewScanner(r)
 		for scanner.Scan() {
 			if workingOn == "stdout" {
@@ -153,15 +153,17 @@ func DockerJudge(ctx context.Context, cli *client.Client, payload *Payload, wStd
 			}
 		}
 	}
-	//wg.Add(2)
-	go readWrite(dockerEvalResult.Stdout, wStdout, "stdout")
-	go readWrite(dockerEvalResult.Stderr, wStderr, "stderr")
+	wg.Add(2)
+	go readWrite(dockerEvalResult.Stdout, wStdout, "stdout", &wg)
+	go readWrite(dockerEvalResult.Stderr, wStderr, "stderr", &wg)
 	// go func() {
 	// 	wg.Wait()
 	// 	log.Printf("Finished both read-write jobs")
 	// }()
 	select {
 	case <-dockerEvalResult.Done:
+		wg.Wait()
+		log.Printf("Finished both read-write jobs again")
 	case <-ctx.Done():
 		log.Printf("Context cancelled")
 		dockerEvalResult.Cleanup()
