@@ -3,6 +3,11 @@ Prerequisites
 curl https://glide.sh/get | sh
 ```
 
+Install Images:
+```
+docker pull phluent/clang
+```
+
 Installation Steps
 
 ```
