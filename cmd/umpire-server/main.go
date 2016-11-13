@@ -1,14 +1,19 @@
 package main
 
 import (
+	"flag"
 	"github.com/docker/docker/client"
 	"github.com/labstack/echo"
 	"github.com/labstack/echo/middleware"
+	"github.com/labstack/gommon/log"
 	"github.com/maddyonline/umpire"
-	"log"
 	"net/http"
 	"path/filepath"
 	"time"
+)
+
+var (
+	problems = flag.String("problems", "../../", "directory containing problems")
 )
 
 var localAgent *umpire.Agent
@@ -56,16 +61,19 @@ func run(c echo.Context) error {
 }
 
 func main() {
+	flag.Parse()
 	cli, err := client.NewEnvClient()
 	if err != nil {
 		log.Fatalf("%v", err)
 		return
 	}
-	problemsDir, err := filepath.Abs("../../")
+	log.Info("Successfully initialized docker client")
+	problemsDir, err := filepath.Abs(*problems)
 	if err != nil {
 		log.Fatalf("%v", err)
 		return
 	}
+	log.Infof("Using `%s` as problems directory", problemsDir)
 	localAgent = &umpire.Agent{cli, problemsDir}
 
 	e := echo.New()
