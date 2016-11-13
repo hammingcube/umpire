@@ -45,19 +45,8 @@ func run(c echo.Context) error {
 		return err
 	}
 	log.Printf("payload: %v", payload)
-	done := make(chan interface{})
-	go func() {
-		done <- umpire.RunDefault(localAgent, payload)
-	}()
-	for {
-		select {
-		case out := <-done:
-			return c.JSON(http.StatusCreated, out)
-		case <-time.After(5 * time.Second):
-			return c.JSON(http.StatusCreated, map[string]string{"status": "pending"})
-		}
-	}
-
+	out := umpire.RunDefault(localAgent, payload)
+	return c.JSON(http.StatusCreated, out)
 }
 
 func main() {
