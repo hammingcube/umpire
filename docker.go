@@ -15,7 +15,7 @@ import (
 	"net"
 	_ "os"
 	_ "strings"
-	//"sync"
+	"sync"
 	"time"
 )
 
@@ -85,23 +85,28 @@ func DockerRun(ctx context.Context, cli *client.Client, payload *Payload, wStdou
 		return err
 	}
 	defer dockerEvalResult.Cleanup()
-	readWrite := func(readFrom io.ReadCloser, writeTo io.Writer) {
+	var wg sync.WaitGroup
+	readWrite := func(readFrom io.ReadCloser, writeTo io.Writer, wg *sync.WaitGroup) {
 		r, w := io.Pipe()
 		mw := io.MultiWriter(writeTo, w)
-		go func() {
+		go func(wg *sync.WaitGroup) {
+			defer func() { wg.Done() }()
 			defer readFrom.Close()
 			defer r.Close()
 			io.Copy(mw, readFrom)
-		}()
+		}(wg)
 		scanner := bufio.NewScanner(r)
 		for scanner.Scan() {
 			text := scanner.Text()
 			log.Printf("text: %q", text)
 		}
 	}
-	go readWrite(dockerEvalResult.Stdout, wStdout)
-	go readWrite(dockerEvalResult.Stderr, wStderr)
+	wg.Add(2)
+	go readWrite(dockerEvalResult.Stdout, wStdout, &wg)
+	go readWrite(dockerEvalResult.Stderr, wStderr, &wg)
 	<-dockerEvalResult.Done
+	wg.Wait()
+	log.Printf("Finished both read-write jobs")
 	return nil
 }
 

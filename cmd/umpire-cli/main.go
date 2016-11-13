@@ -37,7 +37,7 @@ var payloadExample = &umpire.Payload{
 			Content: CPP_CODE,
 		},
 	},
-	Stdin: "her\nhim\nher\ncool",
+	Stdin: "here\nhellotherehowareyou\ncol\nteh\reallynice\n",
 }
 
 func exampleDockerRun() error {
@@ -136,12 +136,29 @@ func exampleJudgeAll() {
 	log.Printf("In main, got: %v", err)
 }
 
+func run() {
+	cli, err := client.NewEnvClient()
+	if err != nil {
+		log.Fatalf("%v", err)
+		return
+	}
+	problemsDir, err := filepath.Abs("../../")
+	if err != nil {
+		log.Fatalf("%v", err)
+		return
+	}
+	u := &umpire.Agent{cli, problemsDir}
+	out := umpire.RunDefault(u, payloadExample)
+	fmt.Printf("out=%v\n", out)
+}
+
 func main() {
+	run()
 	//exampleDockerRun()
 	//exampleDockerJudge()
 	//log.Printf("In main: %v", exampleDockerJudgeMulti())
 
-	exampleRunAndJudge()
+	//exampleRunAndJudge()
 
 	// //err = u.JudgeAll(context.Background(), payloadExample, ioutil.Discard, ioutil.Discard)
 
