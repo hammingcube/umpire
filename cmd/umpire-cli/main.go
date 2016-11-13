@@ -2,10 +2,10 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"fmt"
-	"github.com/docker/engine-api/client"
+	"github.com/docker/docker/client"
 	"github.com/maddyonline/umpire"
-	"golang.org/x/net/context"
 	"io/ioutil"
 	"log"
 	"os"

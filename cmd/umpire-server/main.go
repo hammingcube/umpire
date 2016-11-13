@@ -1,9 +1,8 @@
 package main
 
 import (
-	"github.com/docker/engine-api/client"
+	"github.com/docker/docker/client"
 	"github.com/labstack/echo"
-	"github.com/labstack/echo/engine/standard"
 	"github.com/labstack/echo/middleware"
 	"github.com/maddyonline/umpire"
 	"log"
@@ -80,5 +79,7 @@ func main() {
 	e.POST("/run", run)
 
 	// Start server
-	e.Run(standard.New(":1323"))
+	if err := e.Start(":1323"); err != nil {
+		e.Logger.Fatal(err.Error())
+	}
 }

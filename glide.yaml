@@ -1,0 +1,13 @@
+package: github.com/maddyonline/umpire
+import:
+- package: github.com/docker/docker
+  version: ^1.13.0-rc1
+  subpackages:
+  - api/types
+  - api/types/container
+  - api/types/network
+  - client
+- package: github.com/labstack/echo
+  version: ^3.0.0-beta.3
+  subpackages:
+  - middleware

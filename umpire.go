@@ -3,9 +3,9 @@ package umpire
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"errors"
-	"github.com/docker/engine-api/client"
-	"golang.org/x/net/context"
+	"github.com/docker/docker/client"
 	"io"
 	"io/ioutil"
 	"log"
