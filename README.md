@@ -22,3 +22,4 @@ glide install
 go install $(glide novendor)
 umpire-server -problems="../problems"
 ```
+
