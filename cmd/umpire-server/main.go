@@ -32,7 +32,7 @@ func judge(c echo.Context) error {
 		select {
 		case out := <-done:
 			return c.JSON(http.StatusCreated, out)
-		case <-time.After(5 * time.Second):
+		case <-time.After(60 * time.Second):
 			return c.JSON(http.StatusCreated, map[string]string{"status": "pending"})
 		}
 	}
