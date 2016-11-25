@@ -115,7 +115,7 @@ func exampleRunAndJudge() {
 		log.Fatalf("%v", err)
 		return
 	}
-	u := &umpire.Agent{cli, problemsDir}
+	u := &umpire.Agent{cli, problemsDir, nil}
 	err = u.RunAndJudge(context.Background(), payloadExample, os.Stdout, ioutil.Discard)
 	log.Printf("In main, got: %v", err)
 }
@@ -131,7 +131,7 @@ func exampleJudgeAll() {
 		log.Fatalf("%v", err)
 		return
 	}
-	u := &umpire.Agent{cli, problemsDir}
+	u := &umpire.Agent{cli, problemsDir, nil}
 	err = u.JudgeAll(context.Background(), payloadExample, ioutil.Discard, ioutil.Discard)
 	log.Printf("In main, got: %v", err)
 }
@@ -147,7 +147,7 @@ func run() {
 		log.Fatalf("%v", err)
 		return
 	}
-	u := &umpire.Agent{cli, problemsDir}
+	u := &umpire.Agent{cli, problemsDir, nil}
 	out := umpire.RunDefault(u, payloadExample)
 	fmt.Printf("out=%v\n", out)
 }

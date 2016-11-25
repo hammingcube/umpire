@@ -9,6 +9,7 @@ import (
 	"github.com/labstack/echo/middleware"
 	"github.com/labstack/gommon/log"
 	"github.com/maddyonline/umpire"
+	"math/rand"
 	"net/http"
 	"path/filepath"
 	"time"
@@ -20,6 +21,38 @@ var (
 )
 
 var localAgent *umpire.Agent
+
+func init() {
+	rand.Seed(time.Now().UnixNano())
+}
+
+func main() {
+	flag.Parse()
+	localAgent = &umpire.Agent{}
+	if err := initializeAgent(localAgent, problems, serverdb); err != nil {
+		log.Fatalf("failed to start: %v", err)
+		return
+	}
+
+	e := echo.New()
+
+	e.Logger.SetLevel(log.INFO)
+
+	// Middleware
+	e.Use(middleware.Logger())
+	e.Use(middleware.Recover())
+	e.Use(middleware.CORS())
+
+	// Routes
+	e.POST("/judge", judge)
+	e.POST("/run", run)
+	e.POST("/validate", validate)
+
+	// Start server
+	if err := e.Start(":1323"); err != nil {
+		e.Logger.Fatal(err.Error())
+	}
+}
 
 func judge(c echo.Context) error {
 	payload := &umpire.Payload{}
@@ -50,6 +83,25 @@ func run(c echo.Context) error {
 	c.Logger().Infof("run: %#v", payload)
 	out := umpire.RunDefault(localAgent, payload)
 	return c.JSON(http.StatusCreated, out)
+}
+
+func validate(c echo.Context) error {
+	jd := &umpire.JudgeData{}
+	if err := c.Bind(jd); err != nil {
+		return err
+	}
+	key, err := localAgent.UpdateProblemsCache(jd)
+	if err != nil {
+		return err
+	}
+	defer localAgent.RemoveFromProblemsCache(key)
+	payload := &umpire.Payload{
+		Problem:  &umpire.Problem{Id: key},
+		Language: jd.Solution.Language,
+		Files:    jd.Solution.Files,
+	}
+	out := umpire.JudgeDefault(localAgent, payload)
+	return c.JSON(http.StatusOK, out)
 }
 
 func fetchProblems(apiUrl string) (map[string]*umpire.JudgeData, error) {
@@ -99,31 +151,4 @@ func initializeAgent(agent *umpire.Agent, problems, serverdb *string) error {
 	agent.ProblemsDir = problemsDir
 	log.Infof("Using `%s` as problems directory", problemsDir)
 	return nil
-}
-
-func main() {
-	flag.Parse()
-	localAgent = &umpire.Agent{}
-	if err := initializeAgent(localAgent, problems, serverdb); err != nil {
-		log.Fatalf("failed to start: %v", err)
-		return
-	}
-
-	e := echo.New()
-
-	e.Logger.SetLevel(log.INFO)
-
-	// Middleware
-	e.Use(middleware.Logger())
-	e.Use(middleware.Recover())
-	e.Use(middleware.CORS())
-
-	// Routes
-	e.POST("/judge", judge)
-	e.POST("/run", run)
-
-	// Start server
-	if err := e.Start(":1323"); err != nil {
-		e.Logger.Fatal(err.Error())
-	}
 }

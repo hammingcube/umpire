@@ -5,15 +5,16 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"github.com/docker/docker/client"
 	"github.com/labstack/gommon/log"
 	"io"
 	"io/ioutil"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
-	_ "time"
 )
 
 type TestCase struct {
@@ -113,6 +114,24 @@ func (u *Agent) JudgeTestcase(ctx context.Context, payload *Payload, stdout, std
 	*payloadToSend = *payload
 	payloadToSend.Stdin = string(testcaseData)
 	return DockerJudge(ctx, u.Client, payloadToSend, stdout, stderr, bufio.NewScanner(testcase.Expected))
+}
+
+func (u *Agent) UpdateProblemsCache(jd *JudgeData) (string, error) {
+	if u.Data == nil {
+		return "", fmt.Errorf("Agent's data map not initialized")
+	}
+	key := RandStringRunes(12)
+	u.Data[key] = jd
+	return key, nil
+}
+
+func (u *Agent) RemoveFromProblemsCache(key string) {
+	if u.Data == nil {
+		return
+	}
+	if _, ok := u.Data[key]; ok {
+		delete(u.Data, key)
+	}
 }
 
 func (u *Agent) JudgeAll(ctx context.Context, payload *Payload, stdout, stderr io.Writer) error {
@@ -283,4 +302,14 @@ func RunDefault(u *Agent, payload *Payload) *Response {
 		return &Response{Fail, err.Error(), stdout.String(), stderr.String()}
 	}
 	return &Response{Pass, "Output is as expected", stdout.String(), stderr.String()}
+}
+
+var letterRunes = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+
+func RandStringRunes(n int) string {
+	b := make([]rune, n)
+	for i := range b {
+		b[i] = letterRunes[rand.Intn(len(letterRunes))]
+	}
+	return string(b)
 }
