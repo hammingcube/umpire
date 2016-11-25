@@ -51,36 +51,35 @@ func run(c echo.Context) error {
 	return c.JSON(http.StatusCreated, out)
 }
 
-func initializeAgent(problems, serverdb *string) (*umpire.Agent, error) {
+func initializeAgent(agent *umpire.Agent, problems, serverdb *string) error {
+	if problems == nil || serverdb == nil {
+		return fmt.Errorf("need to parse flags")
+	}
+
 	cli, err := client.NewEnvClient()
 	if err != nil {
-		return nil, err
+		return err
 	}
 	log.Info("Successfully initialized docker client")
-
-	if problems == nil || serverdb == nil {
-		return nil, fmt.Errorf("need to parse flags")
-	}
-
+	agent.Client = cli
 	if *serverdb != "" {
-		return &umpire.Agent{}, nil
+		return nil
 	}
-
 	problemsDir, err := filepath.Abs(*problems)
 	if err != nil {
-		return nil, err
+		return err
 	}
+	agent.ProblemsDir = problemsDir
 	log.Infof("Using `%s` as problems directory", problemsDir)
-	return &umpire.Agent{cli, problemsDir, nil}, nil
+	return nil
 }
 
 func main() {
 	flag.Parse()
-	if agent, err := initializeAgent(problems, serverdb); err != nil {
+	localAgent = &umpire.Agent{}
+	if err := initializeAgent(localAgent, problems, serverdb); err != nil {
 		log.Fatalf("failed to start: %v", err)
 		return
-	} else {
-		localAgent = agent
 	}
 
 	e := echo.New()
