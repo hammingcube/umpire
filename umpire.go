@@ -6,9 +6,9 @@ import (
 	"context"
 	"errors"
 	"github.com/docker/docker/client"
+	"github.com/labstack/gommon/log"
 	"io"
 	"io/ioutil"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -22,9 +22,15 @@ type TestCase struct {
 	Id       string
 }
 
+type JudgeData struct {
+	Solution  *Payload
+	Testcases []*TestCase
+}
+
 type Agent struct {
 	Client      *client.Client
 	ProblemsDir string
+	Data        map[string]*JudgeData
 }
 
 type Decision string
@@ -51,12 +57,15 @@ func createDirectoryWithFiles(files []*InMemoryFile) (*string, error) {
 		if err := ioutil.WriteFile(tmpfn, []byte(file.Content), 0666); err != nil {
 			return nil, err
 		}
-		log.Println(tmpfn)
+		log.Printf("%s", tmpfn)
 	}
 	return &dir, nil
 }
 
-func loadTestCases(problemsDir string, payload *Payload) ([]*TestCase, error) {
+func (u *Agent) loadTestCases(problemsDir string, payload *Payload) ([]*TestCase, error) {
+	if u.Data != nil && u.Data[payload.Problem.Id] != nil {
+		return u.Data[payload.Problem.Id].Testcases, nil
+	}
 	testcases := []*TestCase{}
 	files, err := ioutil.ReadDir(filepath.Join(problemsDir, payload.Problem.Id, "testcases"))
 	if err != nil {
@@ -103,7 +112,7 @@ func (u *Agent) JudgeAll(ctx context.Context, payload *Payload, stdout, stderr i
 	var wg sync.WaitGroup
 	ctx, cancel := context.WithCancel(ctx)
 	errors := make(chan error)
-	testcases, err := loadTestCases(u.ProblemsDir, payload)
+	testcases, err := u.loadTestCases(u.ProblemsDir, payload)
 	if err != nil {
 		return err
 	}
@@ -152,7 +161,12 @@ func readFiles(files map[string]io.Reader) ([]*InMemoryFile, error) {
 	return ans, nil
 }
 
-func ReadSoln(dirname string) (*Payload, error) {
+func (u *Agent) ReadSoln(payload *Payload) (*Payload, error) {
+	log.Infof("ReadSoln: u.Data=%#v", u.Data)
+	if u.Data != nil && u.Data[payload.Problem.Id] != nil {
+		return u.Data[payload.Problem.Id].Solution, nil
+	}
+	dirname := filepath.Join(u.ProblemsDir, payload.Problem.Id, "solution")
 	supported := map[string]bool{"cpp": true}
 	files, err := ioutil.ReadDir(dirname)
 	if err != nil {
@@ -195,31 +209,51 @@ func ReadSoln(dirname string) (*Payload, error) {
 	if err != nil {
 		return nil, err
 	}
-	payload := &Payload{
+	return &Payload{
 		Language: lang,
 		Files:    inMemoryFiles,
-	}
-	return payload, nil
+	}, nil
 }
 
 func (u *Agent) RunAndJudge(ctx context.Context, payload *Payload, stdout, stderr io.Writer) error {
-	r, w := io.Pipe()
-	correctlySolve := func(w io.Writer) {
-		payloadToSend, err := ReadSoln(filepath.Join(u.ProblemsDir, payload.Problem.Id, "solution"))
+	ctx, cancelFunc := context.WithCancel(ctx)
+
+	solveCorrectSolution := func(ctx context.Context, ch chan error, w io.Writer) {
+		payloadToSend, err := u.ReadSoln(payload)
+		log.Infof("solveCorrectSolution: payloadToSend=%#v, err=%v", payloadToSend, err)
 		if err != nil {
+			ch <- err
 			return
 		}
 		payloadToSend.Stdin = payload.Stdin
-		DockerRun(ctx, u.Client, payloadToSend, w, ioutil.Discard)
+		ch <- DockerRun(ctx, u.Client, payloadToSend, w, ioutil.Discard)
+		log.Info("solveCorrectSolution: Finished")
+	}
+	solveCurrentSolution := func(ctx context.Context, ch chan error, r io.Reader) {
+		testcase := &TestCase{
+			Input:    strings.NewReader(payload.Stdin),
+			Expected: r,
+		}
+		ch <- u.JudgeTestcase(ctx, payload, stdout, stderr, testcase)
+		log.Info("solveCurrentSolution: Finished")
 	}
 
-	go correctlySolve(w)
+	ch := make(chan error)
+	r, w := io.Pipe()
 
-	testcase := &TestCase{
-		Input:    strings.NewReader(payload.Stdin),
-		Expected: r,
+	go solveCorrectSolution(ctx, ch, w)
+	go solveCurrentSolution(ctx, ch, r)
+
+	err := <-ch
+	if err != nil {
+		cancelFunc()
+		go func() {
+			err := <-ch
+			log.Infof("Btw, second err=%v", err)
+		}()
+		return err
 	}
-	return u.JudgeTestcase(context.Background(), payload, stdout, stderr, testcase)
+	return <-ch
 }
 
 func JudgeDefault(u *Agent, payload *Payload) *Response {

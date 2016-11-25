@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"github.com/docker/docker/client"
 	"github.com/labstack/echo"
 	"github.com/labstack/echo/middleware"
@@ -14,6 +15,7 @@ import (
 
 var (
 	problems = flag.String("problems", "../../", "directory containing problems")
+	serverdb = flag.String("serverdb", "", "server to get problems list (e.g. localhost:3013)")
 )
 
 var localAgent *umpire.Agent
@@ -23,7 +25,7 @@ func judge(c echo.Context) error {
 	if err := c.Bind(payload); err != nil {
 		return err
 	}
-	log.Printf("payload: %v", payload)
+	c.Logger().Infof("judge: %#v", payload)
 	done := make(chan interface{})
 	go func() {
 		done <- umpire.JudgeDefault(localAgent, payload)
@@ -44,28 +46,46 @@ func run(c echo.Context) error {
 	if err := c.Bind(payload); err != nil {
 		return err
 	}
-	log.Printf("payload: %v", payload)
+	c.Logger().Infof("run: %#v", payload)
 	out := umpire.RunDefault(localAgent, payload)
 	return c.JSON(http.StatusCreated, out)
 }
 
-func main() {
-	flag.Parse()
+func initializeAgent(problems, serverdb *string) (*umpire.Agent, error) {
 	cli, err := client.NewEnvClient()
 	if err != nil {
-		log.Fatalf("%v", err)
-		return
+		return nil, err
 	}
 	log.Info("Successfully initialized docker client")
+
+	if problems == nil || serverdb == nil {
+		return nil, fmt.Errorf("need to parse flags")
+	}
+
+	if *serverdb != "" {
+		return &umpire.Agent{}, nil
+	}
+
 	problemsDir, err := filepath.Abs(*problems)
 	if err != nil {
-		log.Fatalf("%v", err)
-		return
+		return nil, err
 	}
 	log.Infof("Using `%s` as problems directory", problemsDir)
-	localAgent = &umpire.Agent{cli, problemsDir}
+	return &umpire.Agent{cli, problemsDir, nil}, nil
+}
+
+func main() {
+	flag.Parse()
+	if agent, err := initializeAgent(problems, serverdb); err != nil {
+		log.Fatalf("failed to start: %v", err)
+		return
+	} else {
+		localAgent = agent
+	}
 
 	e := echo.New()
+
+	e.Logger.SetLevel(log.INFO)
 
 	// Middleware
 	e.Use(middleware.Logger())
