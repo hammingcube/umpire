@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"github.com/docker/docker/client"
@@ -51,11 +52,31 @@ func run(c echo.Context) error {
 	return c.JSON(http.StatusCreated, out)
 }
 
+func fetchProblems(apiUrl string) (map[string]*umpire.JudgeData, error) {
+	url := fmt.Sprintf("%s/problems", apiUrl)
+	log.Infof("Sending request to %s", url)
+	req, err := http.NewRequest("GET", url, nil)
+	req.Header.Add("content-type", "application/json")
+	if err != nil {
+		return nil, err
+	}
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+	v := map[string]*umpire.JudgeData{}
+	if err := json.NewDecoder(res.Body).Decode(&v); err != nil {
+		return nil, err
+	}
+	log.Infof("fetchProblems: %#v", v)
+	return v, nil
+}
+
 func initializeAgent(agent *umpire.Agent, problems, serverdb *string) error {
 	if problems == nil || serverdb == nil {
 		return fmt.Errorf("need to parse flags")
 	}
-
 	cli, err := client.NewEnvClient()
 	if err != nil {
 		return err
@@ -63,6 +84,12 @@ func initializeAgent(agent *umpire.Agent, problems, serverdb *string) error {
 	log.Info("Successfully initialized docker client")
 	agent.Client = cli
 	if *serverdb != "" {
+		log.Infof("Fetching problems from %s", *serverdb)
+		data, err := fetchProblems(*serverdb)
+		if err != nil {
+			return err
+		}
+		agent.Data = data
 		return nil
 	}
 	problemsDir, err := filepath.Abs(*problems)

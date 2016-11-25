@@ -17,14 +17,17 @@ import (
 )
 
 type TestCase struct {
-	Input    io.Reader
-	Expected io.Reader
+	Input    io.Reader `json:"input"`
+	Expected io.Reader `json:"output"`
 	Id       string
 }
 
 type JudgeData struct {
-	Solution  *Payload
-	Testcases []*TestCase
+	Solution *Payload `json:"solution"`
+	IO       []*struct {
+		Input  string `json:"input"`
+		Output string `json:"output"`
+	} `json:"io"`
 }
 
 type Agent struct {
@@ -64,7 +67,11 @@ func createDirectoryWithFiles(files []*InMemoryFile) (*string, error) {
 
 func (u *Agent) loadTestCases(problemsDir string, payload *Payload) ([]*TestCase, error) {
 	if u.Data != nil && u.Data[payload.Problem.Id] != nil {
-		return u.Data[payload.Problem.Id].Testcases, nil
+		testcases := []*TestCase{}
+		for _, io := range u.Data[payload.Problem.Id].IO {
+			testcases = append(testcases, &TestCase{strings.NewReader(io.Input), strings.NewReader(io.Output), payload.Problem.Id})
+		}
+		return testcases, nil
 	}
 	testcases := []*TestCase{}
 	files, err := ioutil.ReadDir(filepath.Join(problemsDir, payload.Problem.Id, "testcases"))
