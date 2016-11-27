@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -54,19 +55,42 @@ func main() {
 	}
 }
 
+func createSubmission(uid string, payload *umpire.Payload, response *umpire.Response) error {
+	v := &struct {
+		*umpire.Payload
+		*umpire.Response
+	}{payload, response}
+	var b bytes.Buffer
+	if err := json.NewEncoder(&b).Encode(v); err != nil {
+		return err
+	}
+	url := fmt.Sprintf("%s/users/%s/submissions", *serverdb, uid)
+	log.Infof("Sending request to %s", url)
+	req, err := http.NewRequest("POST", url, bytes.NewReader(b.Bytes()))
+	if err != nil {
+		return err
+	}
+	req.Header.Add("content-type", "application/json")
+	if _, err = http.DefaultClient.Do(req); err != nil {
+		return err
+	}
+	return nil
+}
+
 func judge(c echo.Context) error {
 	payload := &umpire.Payload{}
 	if err := c.Bind(payload); err != nil {
 		return err
 	}
 	c.Logger().Infof("judge: %#v", payload)
-	done := make(chan interface{})
+	done := make(chan *umpire.Response)
 	go func() {
 		done <- umpire.JudgeDefault(localAgent, payload)
 	}()
 	for {
 		select {
 		case out := <-done:
+			go func() { createSubmission("anon", payload, out) }()
 			return c.JSON(http.StatusCreated, out)
 		case <-time.After(60 * time.Second):
 			return c.JSON(http.StatusCreated, map[string]string{"status": "pending"})
