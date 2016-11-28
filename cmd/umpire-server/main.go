@@ -30,10 +30,26 @@ func init() {
 func main() {
 	flag.Parse()
 	localAgent = &umpire.Agent{}
+
 	if err := initializeAgent(localAgent, problems, serverdb); err != nil {
 		log.Fatalf("failed to start: %v", err)
 		return
 	}
+
+	ticker := time.NewTicker(120 * time.Second)
+	quit := make(chan struct{})
+	go func() {
+		for {
+			select {
+			case <-ticker.C:
+				log.Info("Reinitializing umpire agent")
+				initializeAgent(localAgent, problems, serverdb)
+			case <-quit:
+				ticker.Stop()
+				return
+			}
+		}
+	}()
 
 	e := echo.New()
 
@@ -153,12 +169,15 @@ func initializeAgent(agent *umpire.Agent, problems, serverdb *string) error {
 	if problems == nil || serverdb == nil {
 		return fmt.Errorf("need to parse flags")
 	}
-	cli, err := client.NewEnvClient()
-	if err != nil {
-		return err
+	if agent.Client == nil {
+		cli, err := client.NewEnvClient()
+		if err != nil {
+			return err
+		}
+		agent.Client = cli
+		log.Info("Successfully initialized docker client")
 	}
-	log.Info("Successfully initialized docker client")
-	agent.Client = cli
+
 	if *serverdb != "" {
 		log.Infof("Fetching problems from %s", *serverdb)
 		data, err := fetchProblems(*serverdb)
