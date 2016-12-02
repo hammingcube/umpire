@@ -64,6 +64,7 @@ func main() {
 	e.POST("/judge", judge)
 	e.POST("/run", run)
 	e.POST("/validate", validate)
+	e.POST("/execute", execute)
 
 	// Start server
 	if err := e.Start(":1323"); err != nil {
@@ -122,7 +123,17 @@ func run(c echo.Context) error {
 	}
 	c.Logger().Infof("run: %#v", payload)
 	out := umpire.RunDefault(localAgent, payload)
-	return c.JSON(http.StatusCreated, out)
+	return c.JSON(http.StatusOK, out)
+}
+
+func execute(c echo.Context) error {
+	payload := &umpire.Payload{}
+	if err := c.Bind(payload); err != nil {
+		return err
+	}
+	c.Logger().Infof("execute: %#v", payload)
+	out := umpire.ExecuteDefault(localAgent, payload)
+	return c.JSON(http.StatusOK, out)
 }
 
 func validate(c echo.Context) error {

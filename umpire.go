@@ -243,6 +243,10 @@ func (u *Agent) ReadSoln(payload *Payload) (*Payload, error) {
 	}, nil
 }
 
+func (u *Agent) Execute(ctx context.Context, incoming *Payload, stdout, stderr io.Writer) error {
+	return DockerRun(ctx, u.Client, incoming, stdout, stderr)
+}
+
 func (u *Agent) RunAndJudge(ctx context.Context, incoming *Payload, stdout, stderr io.Writer) error {
 	ctx, cancelFunc := context.WithCancel(ctx)
 	if u.Data == nil || u.Data[incoming.Problem.Id] == nil {
@@ -305,6 +309,19 @@ func JudgeDefault(u *Agent, payload *Payload) *Response {
 	return &Response{
 		Status: Pass,
 	}
+}
+
+func ExecuteDefault(u *Agent, incoming *Payload) *Response {
+	var stdout, stderr bytes.Buffer
+	err := u.Execute(context.Background(), incoming, &stdout, &stderr)
+	log.Printf("Execute: %#v", err)
+	if err != nil {
+		return &Response{Fail, err.Error(), stdout.String(), stderr.String()}
+	}
+	if stderr.String() != "" {
+		return &Response{Fail, "Error while running program", stdout.String(), stderr.String()}
+	}
+	return &Response{Pass, "", stdout.String(), stderr.String()}
 }
 
 func RunDefault(u *Agent, incoming *Payload) *Response {
