@@ -1,15 +1,15 @@
 hash: a12a5c287bff3d632ed2bf19e5e8b73602b24ffb085726cc8350ac2b6e9a7fb4
-updated: 2016-11-12T17:02:43.849537886-08:00
+updated: 2016-12-01T21:35:15.159016855-08:00
 imports:
 - name: github.com/dgrijalva/jwt-go
   version: 9ed569b5d1ac936e6494082958d63a6aa4fff99a
 - name: github.com/docker/distribution
-  version: d22e09a6686c32be8c17b684b639da4b90efe320
+  version: c59995570762ec8ef1b1d5a0b147600622979cb1
   subpackages:
   - digest
   - reference
 - name: github.com/docker/docker
-  version: 75fd88ba8938f120ce1f2a21b19cf13c12071b16
+  version: 1f9b3ef9e9c74c2905780ac5347d018646a20022
   subpackages:
   - api/types
   - api/types/blkiodev
@@ -28,15 +28,15 @@ imports:
   - client
   - pkg/tlsconfig
 - name: github.com/docker/go-connections
-  version: f512407a188ecb16f31a33dbc9c4e4814afc1b03
+  version: 4ccf312bf1d35e5dbda654e57a9be4c3f3cd0366
   subpackages:
   - nat
   - sockets
   - tlsconfig
 - name: github.com/docker/go-units
-  version: 8a7beacffa3009a9ac66bad506b18ffdd110cf97
+  version: e30f1e79f3cd72542f2026ceec18d3bd67ab859c
 - name: github.com/labstack/echo
-  version: f4145353be66ecea81f5e268aa9a27f2a4230362
+  version: cd2530ea098106338b888f4fb66e966efa2fd75e
   subpackages:
   - middleware
 - name: github.com/labstack/gommon
@@ -49,13 +49,13 @@ imports:
 - name: github.com/mattn/go-colorable
   version: d228849504861217f796da67fae4f6e347643f15
 - name: github.com/mattn/go-isatty
-  version: 66b8e73f3f5cda9f96b69efd03dd3d7fc4a5cdb8
+  version: 30a891c33c7cde7b02a981314b4228ec99380cca
 - name: github.com/Microsoft/go-winio
-  version: 562bb09f6612d9a4e91597184709d1cdba95af93
+  version: 24a3e3d3fc7451805e09d11e11e95d9a0a4f205e
 - name: github.com/miekg/dns
-  version: 58f52c57ce9df13460ac68200cef30a008b9c468
+  version: 271c58e0c14f552178ea321a545ff9af38930f39
 - name: github.com/opencontainers/runc
-  version: 188312013fb75d64b627a94e1defd0fff952371b
+  version: 4271a8b5aec07d69f128df5474dea064d4694832
   subpackages:
   - libcontainer/user
 - name: github.com/pkg/errors
@@ -67,11 +67,11 @@ imports:
   subpackages:
   - formatters/logstash
 - name: github.com/tylerb/graceful
-  version: 50a48b6e73fcc75b45e22c05b79629a67c79e938
+  version: 4df1190835320af7076dfcf27b3d071fd3612caf
 - name: github.com/valyala/fasttemplate
   version: 3b874956e03f1636d171bda64b130f9135f42cff
 - name: github.com/xenolf/lego
-  version: 2abbe6d836b6b4c5659a672c8a5b7cab5dd0c4dd
+  version: cc94601612b43c3cf862a5ae5e2ec66fa5e64c89
   subpackages:
   - acme
 - name: golang.org/x/crypto
@@ -87,9 +87,8 @@ imports:
   - context/ctxhttp
   - proxy
   - publicsuffix
-  - websocket
 - name: golang.org/x/sys
-  version: b699b7032584f0953262cb2788a0ca19bb494703
+  version: d5645953809d8b4752afb2c3224b1f1ad73dfa70
   subpackages:
   - unix
   - windows

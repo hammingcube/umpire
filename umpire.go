@@ -107,6 +107,8 @@ func (u *Agent) JudgeTestcase(ctx context.Context, payload *Payload, stdout, std
 		os.RemoveAll(*workDir)
 	}()
 	testcaseData, err := ioutil.ReadAll(testcase.Input)
+	log.Infof("JudgeTestcase: %#v, %v", testcaseData, err)
+
 	if err != nil {
 		return err
 	}
@@ -188,7 +190,7 @@ func readFiles(files map[string]io.Reader) ([]*InMemoryFile, error) {
 }
 
 func (u *Agent) ReadSoln(payload *Payload) (*Payload, error) {
-	log.Infof("ReadSoln: u.Data=%#v", u.Data)
+	log.Infof("ReadSoln: number of problems = %d", len(u.Data))
 	if u.Data != nil && u.Data[payload.Problem.Id] != nil {
 		return u.Data[payload.Problem.Id].Solution, nil
 	}
@@ -241,34 +243,44 @@ func (u *Agent) ReadSoln(payload *Payload) (*Payload, error) {
 	}, nil
 }
 
-func (u *Agent) RunAndJudge(ctx context.Context, payload *Payload, stdout, stderr io.Writer) error {
+func (u *Agent) RunAndJudge(ctx context.Context, incoming *Payload, stdout, stderr io.Writer) error {
 	ctx, cancelFunc := context.WithCancel(ctx)
-
-	solveCorrectSolution := func(ctx context.Context, ch chan error, w io.Writer) {
-		payloadToSend, err := u.ReadSoln(payload)
-		log.Infof("solveCorrectSolution: payloadToSend=%#v, err=%v", payloadToSend, err)
-		if err != nil {
-			ch <- err
-			return
-		}
-		payloadToSend.Stdin = payload.Stdin
-		ch <- DockerRun(ctx, u.Client, payloadToSend, w, ioutil.Discard)
-		log.Info("solveCorrectSolution: Finished")
+	if u.Data == nil || u.Data[incoming.Problem.Id] == nil {
+		return errors.New("Solution not found")
 	}
-	solveCurrentSolution := func(ctx context.Context, ch chan error, r io.Reader) {
-		testcase := &TestCase{
-			Input:    strings.NewReader(payload.Stdin),
-			Expected: r,
-		}
-		ch <- u.JudgeTestcase(ctx, payload, stdout, stderr, testcase)
-		log.Info("solveCurrentSolution: Finished")
-	}
+	log.Info("Found correct solution for problem %s", incoming.Problem.Id)
+	solnPayload := u.Data[incoming.Problem.Id].Solution
+	solnPayload.Stdin = incoming.Stdin
 
 	ch := make(chan error)
 	r, w := io.Pipe()
 
-	go solveCorrectSolution(ctx, ch, w)
-	go solveCurrentSolution(ctx, ch, r)
+	testcase := &TestCase{
+		Input:    strings.NewReader(incoming.Stdin),
+		Expected: r,
+	}
+	go func(ctx context.Context, payload *Payload, ch chan error) {
+		defer w.Close()
+		var stderr bytes.Buffer
+		err := DockerRun(ctx, u.Client, payload, w, &stderr)
+		if err != nil {
+			ch <- err
+			return
+		}
+		if stderr.String() != "" {
+			ch <- errors.New(stderr.String())
+			return
+		}
+		log.Info("Done solving correct solution")
+		ch <- nil
+
+	}(ctx, solnPayload, ch)
+
+	go func(ctx context.Context, payload *Payload, ch chan error) {
+		defer r.Close()
+		ch <- u.JudgeTestcase(ctx, payload, stdout, stderr, testcase)
+		log.Info("Done solving user solution")
+	}(ctx, incoming, ch)
 
 	err := <-ch
 	if err != nil {
@@ -295,9 +307,10 @@ func JudgeDefault(u *Agent, payload *Payload) *Response {
 	}
 }
 
-func RunDefault(u *Agent, payload *Payload) *Response {
+func RunDefault(u *Agent, incoming *Payload) *Response {
 	var stdout, stderr bytes.Buffer
-	err := u.RunAndJudge(context.Background(), payload, &stdout, &stderr)
+	err := u.RunAndJudge(context.Background(), incoming, &stdout, &stderr)
+	log.Printf("RunDefault: %#v", err)
 	if err != nil {
 		return &Response{Fail, err.Error(), stdout.String(), stderr.String()}
 	}

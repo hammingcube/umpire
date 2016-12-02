@@ -161,7 +161,7 @@ func fetchProblems(apiUrl string) (map[string]*umpire.JudgeData, error) {
 	if err := json.NewDecoder(res.Body).Decode(&v); err != nil {
 		return nil, err
 	}
-	log.Infof("fetchProblems: %#v", v)
+	log.Infof("fetchProblems: number of problems=%d", len(v))
 	return v, nil
 }
 

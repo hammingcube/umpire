@@ -10,8 +10,8 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
+	"github.com/labstack/gommon/log"
 	"io"
-	"log"
 	"net"
 	_ "os"
 	_ "strings"
@@ -104,81 +104,90 @@ func DockerRun(ctx context.Context, cli *client.Client, payload *Payload, wStdou
 	wg.Add(2)
 	go readWrite(dockerEvalResult.Stdout, wStdout, &wg)
 	go readWrite(dockerEvalResult.Stderr, wStderr, &wg)
-	<-dockerEvalResult.Done
-	wg.Wait()
-	log.Printf("Finished both read-write jobs")
-	return nil
+
+	select {
+	case <-dockerEvalResult.Done:
+		wg.Wait()
+		log.Printf("Finished both read-write jobs again")
+		return nil
+	case <-ctx.Done():
+		log.Printf("Context cancelled")
+		dockerEvalResult.Cleanup()
+		return errors.New("Context cancelled")
+	}
 }
 
 func DockerJudge(ctx context.Context, cli *client.Client, payload *Payload, wStdout io.Writer, wStderr io.Writer, expected *bufio.Scanner) error {
-	dockerEvalResult, err := dockerEval(context.Background(), cli, payload)
+	dockerEvalResult, err := dockerEval(ctx, cli, payload)
 	if err != nil {
 		return err
 	}
 	defer dockerEvalResult.Cleanup()
 	errChan := make(chan error)
-	var stdoutErr, stderrErr error
 	var wg sync.WaitGroup
-	readWrite := func(readFrom io.ReadCloser, writeTo io.Writer, workingOn string, wg *sync.WaitGroup) {
+	readWrite := func(readFrom io.ReadCloser, writeTo io.Writer, source string, wg *sync.WaitGroup) {
+		defer wg.Done()
 		r, w := io.Pipe()
-		mw := io.MultiWriter(writeTo, w)
-		go func(wg *sync.WaitGroup) {
-			defer func() { wg.Done() }()
-			defer readFrom.Close()
-			defer r.Close()
-			io.Copy(mw, readFrom)
-		}(wg)
 		scanner := bufio.NewScanner(r)
+		go func(w io.WriteCloser) {
+			defer readFrom.Close()
+			defer w.Close()
+			multiWriteTo := io.MultiWriter(writeTo, w)
+			io.Copy(multiWriteTo, readFrom)
+		}(w)
+		fullText := ""
 		for scanner.Scan() {
-			if workingOn == "stdout" {
+			text := scanner.Text()
+			fullText += text
+			log.Infof("scanning %s: %s", source, text)
+			if source == "stdout" {
 				expected.Scan()
-				text1 := scanner.Text()
-				text2 := expected.Text()
+				text1, text2 := text, expected.Text()
 				log.Printf("got text: %q", text1)
 				log.Printf("want text: %q", text2)
 				if text1 != text2 {
 					log.Printf("got stdout error: %s %s", text1, text2)
-					stdoutErr = errors.New(fmt.Sprintf("Mismatch Error: got %s, expected %s", text1, text2))
-					errChan <- stdoutErr
-					return
-				}
-			} else if workingOn == "stderr" {
-				text := scanner.Text()
-				if len(text) > 0 {
-					log.Printf("got stderr error: %s", text)
-					stderrErr = errors.New(fmt.Sprintf("Stderr: %s", text))
-					errChan <- stderrErr
+					errChan <- errors.New(fmt.Sprintf("Mismatch Error: got %s, expected %s", text1, text2))
 					return
 				}
 			}
 		}
+		if source == "stderr" && fullText != "" {
+			errChan <- fmt.Errorf("stderr error: %s", fullText)
+			return
+		}
+		errChan <- nil
+		return
 	}
 	wg.Add(2)
 	go readWrite(dockerEvalResult.Stdout, wStdout, "stdout", &wg)
 	go readWrite(dockerEvalResult.Stderr, wStderr, "stderr", &wg)
-	// go func() {
-	// 	wg.Wait()
-	// 	log.Printf("Finished both read-write jobs")
-	// }()
+
+	go func() {
+		log.Info("Waiting for read-write jobs to finish")
+		wg.Wait()
+		log.Info("Finished read-write jobs")
+	}()
+	var chanErr error
 	select {
 	case <-dockerEvalResult.Done:
-		wg.Wait()
 		log.Printf("Finished both read-write jobs again")
+		chanErr = <-errChan
 	case <-ctx.Done():
-		log.Printf("Context cancelled")
+		log.Printf("Original context cancelled: calling docker cleanup")
 		dockerEvalResult.Cleanup()
-		return errors.New("Context cancelled")
-	case err := <-errChan:
-		return err
+		chanErr = <-errChan
+	case chanErr = <-errChan:
 	}
-
-	if stderrErr != nil {
-		return stderrErr
+	log.Infof("Got one of the channel errors: %v", chanErr)
+	if chanErr != nil {
+		go func() {
+			err := <-errChan
+			log.Infof("Btw, the other channel error: %v", err)
+		}()
+		return chanErr
 	}
-	if stdoutErr != nil {
-		return stdoutErr
-	}
-	return nil
+	return <-errChan
 }
 
 func dockerEval(ctx context.Context, cli *client.Client, payload *Payload) (*DockerEvalResult, error) {
@@ -229,7 +238,7 @@ func dockerEval(ctx context.Context, cli *client.Client, payload *Payload) (*Doc
 		return nil, err
 	}
 	go func(data []byte, conn net.Conn) {
-		defer func() { log.Println("Done writing") }()
+		defer func() { log.Printf("dockerEval: Done writing") }()
 		defer conn.Close()
 		err := writeConn(conn, data)
 		if err != nil {
@@ -275,6 +284,7 @@ func dockerEval(ctx context.Context, cli *client.Client, payload *Payload) (*Doc
 	go scanLines(stderr, wStderr)
 
 	cleanup := func() error {
+		log.Info("Docker cleanup called")
 		return cli.ContainerRemove(context.Background(), containerId, types.ContainerRemoveOptions{Force: true})
 	}
 	return &DockerEvalResult{containerId, done, rStdout, rStderr, cancel, cleanup}, nil
