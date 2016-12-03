@@ -26,6 +26,7 @@ var configMap = map[string]struct {
 	"cpp":        {[]string{"-stream=true"}, "phluent/clang"},
 	"python":     {[]string{"-stream=true"}, "phluent/python"},
 	"javascript": {[]string{"-stream=true"}, "phluent/javascript"},
+	"typescript": {[]string{"-stream=true"}, "phluent/typescript"},
 }
 
 type Problem struct {
