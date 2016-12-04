@@ -45,7 +45,7 @@ type Payload struct {
 	Stdin    string          `json:"stdin"`
 }
 
-func writeConn(conn net.Conn, data []byte) error {
+func writeConn(conn io.Writer, data []byte) error {
 	log.Printf("Want to write %d bytes", len(data))
 	var start, c int
 	var err error
