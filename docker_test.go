@@ -44,6 +44,10 @@ func TestWriteLine(t *testing.T) {
 			"hello",
 			"hello\n",
 		},
+		{
+			"hello\n",
+			"hello\n\n",
+		},
 	}
 	for _, test := range tests {
 		var out bytes.Buffer

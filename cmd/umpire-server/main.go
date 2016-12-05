@@ -30,12 +30,19 @@ func init() {
 func main() {
 	flag.Parse()
 	localAgent = &umpire.Agent{}
-
 	if err := initializeAgent(localAgent, problems, serverdb); err != nil {
 		log.Fatalf("failed to start: %v", err)
 		return
 	}
+	go reintializeUmpireAgent(localAgent)
+	server := NewUmpireServer(localAgent)
+	e := server.e
+	if err := e.Start(":1323"); err != nil {
+		e.Logger.Fatal(err.Error())
+	}
+}
 
+func reintializeUmpireAgent(localAgent *umpire.Agent) {
 	ticker := time.NewTicker(120 * time.Second)
 	quit := make(chan struct{})
 	go func() {
@@ -50,26 +57,6 @@ func main() {
 			}
 		}
 	}()
-
-	e := echo.New()
-
-	e.Logger.SetLevel(log.INFO)
-
-	// Middleware
-	e.Use(middleware.Logger())
-	e.Use(middleware.Recover())
-	e.Use(middleware.CORS())
-
-	// Routes
-	e.POST("/judge", judge)
-	e.POST("/run", run)
-	e.POST("/validate", validate)
-	e.POST("/execute", execute)
-
-	// Start server
-	if err := e.Start(":1323"); err != nil {
-		e.Logger.Fatal(err.Error())
-	}
 }
 
 func createSubmission(uid string, payload *umpire.Payload, response *umpire.Response) error {
@@ -94,7 +81,38 @@ func createSubmission(uid string, payload *umpire.Payload, response *umpire.Resp
 	return nil
 }
 
-func judge(c echo.Context) error {
+type UmpireServer struct {
+	localAgent *umpire.Agent
+	e          *echo.Echo
+}
+
+func NewUmpireServer(localAgent *umpire.Agent) *UmpireServer {
+	if localAgent == nil {
+		return nil
+	}
+	e := echo.New()
+	us := &UmpireServer{
+		localAgent,
+		e,
+	}
+	e.Logger.SetLevel(log.INFO)
+
+	// Middleware
+	e.Use(middleware.Logger())
+	e.Use(middleware.Recover())
+	e.Use(middleware.CORS())
+
+	// Routes
+	e.POST("/judge", us.judge)
+	e.POST("/run", us.run)
+	e.POST("/validate", us.validate)
+	e.POST("/execute", us.execute)
+
+	return us
+}
+
+func (us *UmpireServer) judge(c echo.Context) error {
+	localAgent := us.localAgent
 	payload := &umpire.Payload{}
 	if err := c.Bind(payload); err != nil {
 		return err
@@ -116,7 +134,8 @@ func judge(c echo.Context) error {
 
 }
 
-func run(c echo.Context) error {
+func (us *UmpireServer) run(c echo.Context) error {
+	localAgent := us.localAgent
 	payload := &umpire.Payload{}
 	if err := c.Bind(payload); err != nil {
 		return err
@@ -126,7 +145,8 @@ func run(c echo.Context) error {
 	return c.JSON(http.StatusOK, out)
 }
 
-func execute(c echo.Context) error {
+func (us *UmpireServer) execute(c echo.Context) error {
+	localAgent := us.localAgent
 	payload := &umpire.Payload{}
 	if err := c.Bind(payload); err != nil {
 		return err
@@ -136,7 +156,8 @@ func execute(c echo.Context) error {
 	return c.JSON(http.StatusOK, out)
 }
 
-func validate(c echo.Context) error {
+func (us *UmpireServer) validate(c echo.Context) error {
+	localAgent := us.localAgent
 	jd := &umpire.JudgeData{}
 	if err := c.Bind(jd); err != nil {
 		return err
@@ -174,6 +195,17 @@ func fetchProblems(apiUrl string) (map[string]*umpire.JudgeData, error) {
 	}
 	log.Infof("fetchProblems: number of problems=%d", len(v))
 	return v, nil
+}
+
+func NewUmpireAgent() (*umpire.Agent, error) {
+	cli, err := client.NewEnvClient()
+	if err != nil {
+		return nil, err
+	}
+	agent := &umpire.Agent{
+		Client: cli,
+	}
+	return agent, nil
 }
 
 func initializeAgent(agent *umpire.Agent, problems, serverdb *string) error {
