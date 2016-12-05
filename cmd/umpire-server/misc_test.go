@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"fmt"
 	"github.com/docker/docker/client"
@@ -12,18 +13,17 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"testing"
 )
 
-const CPP_CODE = `# include <iostream>
+const CPP_CODE = `
+# include <iostream>
 # include <chrono>
-# include <thread>
-
 
 using namespace std;
 int main() {
   string s;
   while(cin >> s) {
-  	std::this_thread::sleep_for(std::chrono::milliseconds(5));
     cout << s.size() << endl;
   }
 }`
@@ -37,26 +37,34 @@ var payloadExample = &umpire.Payload{
 			Content: CPP_CODE,
 		},
 	},
-	Stdin: "here\nhellotherehowareyou\ncol\nteh\reallynice\n",
+	Stdin: "here\nhellotherehowareyou\ncol\nteh\nreallynice\n",
 }
 
-func exampleDockerRun() error {
-	cli, _ := client.NewEnvClient()
-	err := umpire.DockerRun(context.Background(), cli, payloadExample, os.Stdout, os.Stderr)
+func TestDockerRun(t *testing.T) {
+	var b bytes.Buffer
+	cli, err := client.NewEnvClient()
 	if err != nil {
-		fmt.Printf("%v\n", err)
+		t.Error(err)
 	}
-	return err
+	if err := umpire.DockerRun(context.Background(), cli, payloadExample, &b, os.Stderr); err != nil {
+		t.Error(err)
+	}
+	expected := "4\n19\n3\n3\n10\n"
+	if b.String() != expected {
+		t.Errorf("got: %q, expected: %q", b.String(), expected)
+	}
 }
 
-func exampleDockerJudge() error {
-	cli, _ := client.NewEnvClient()
-	expected := strings.NewReader("5\n2\n")
-	err := umpire.DockerJudge(context.Background(), cli, payloadExample, os.Stdout, ioutil.Discard, bufio.NewScanner(expected))
+func TestDockerJudge(t *testing.T) {
+	cli, err := client.NewEnvClient()
 	if err != nil {
-		fmt.Printf("%v\n", err)
+		t.Error(err)
 	}
-	return err
+	expected := strings.NewReader("4\n19\n3\n3\n10\n")
+	if err := umpire.DockerJudge(context.Background(), cli, payloadExample, os.Stdout, ioutil.Discard, bufio.NewScanner(expected)); err != nil {
+		t.Error(err)
+	}
+
 }
 
 func exampleDockerJudgeMulti() error {
@@ -152,7 +160,7 @@ func run() {
 	fmt.Printf("out=%v\n", out)
 }
 
-func main() {
+func newmain() {
 	run()
 	//exampleDockerRun()
 	//exampleDockerJudge()

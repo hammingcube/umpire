@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"github.com/labstack/gommon/log"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
@@ -25,7 +24,6 @@ var raw = `
 `
 
 func init() {
-	log.SetOutput(ioutil.Discard)
 }
 
 func jsonPostRequest(t *testing.T, path string, body []byte) *http.Request {
