@@ -6,9 +6,18 @@ import (
 	"fmt"
 	"github.com/docker/docker/api/types"
 	docker "github.com/docker/docker/client"
+	"github.com/labstack/gommon/log"
 	"io/ioutil"
 	"testing"
 )
+
+var TurnOffLogging = true
+
+func init() {
+	if TurnOffLogging {
+		log.SetOutput(ioutil.Discard)
+	}
+}
 
 func TestDocker(t *testing.T) {
 	cli, err := docker.NewEnvClient()
@@ -24,6 +33,29 @@ func TestDocker(t *testing.T) {
 	for _, container := range containers {
 		fmt.Printf("%s %s\n", container.ID[:10], container.Image)
 	}
+}
+
+func TestWriteLine(t *testing.T) {
+	var tests = []struct {
+		input    string
+		expected string
+	}{
+		{
+			"hello",
+			"hello\n",
+		},
+	}
+	for _, test := range tests {
+		var out bytes.Buffer
+		if err := writeLine(&out, test.input); err != nil {
+			t.Error("writeLine:", err)
+		}
+		got := out.String()
+		if got != test.expected {
+			t.Errorf("writeLine: expected %q got %q", test.expected, got)
+		}
+	}
+
 }
 
 func TestWriteConnSimple(t *testing.T) {

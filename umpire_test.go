@@ -19,14 +19,14 @@ func printStruct(v interface{}) {
 }
 
 func TestReadFiles(t *testing.T) {
-	out, err := readFiles(map[string]io.Reader{
+	_, err := readFiles(map[string]io.Reader{
 		"main.cpp": strings.NewReader("This is cool"),
 		"main.h":   strings.NewReader("Fine this works"),
 	})
 	if err != nil {
 		t.Fail()
 	}
-	printStruct(out)
+	//printStruct(out)
 }
 
 // func TestReadSoln(t *testing.T) {
@@ -118,5 +118,5 @@ func TestDecoding(t *testing.T) {
 		fmt.Printf("err=%v", err)
 		t.Fail()
 	}
-	fmt.Printf("%#v\n", v)
+	//fmt.Printf("%#v\n", v)
 }

@@ -62,7 +62,7 @@ func writeConn(conn io.Writer, data []byte) error {
 	return nil
 }
 
-func SpecialWrite(w io.Writer, text string) error {
+func writeLine(w io.Writer, text string) error {
 	n, err := w.Write([]byte(text + "\n"))
 	if n != len(text)+1 || (err != nil && err != io.EOF) {
 		errorMsg := fmt.Sprintf("Error while writing %d bytes, wrote only %d bytes. Err: %v", len(text)+1, n, err)
@@ -269,7 +269,7 @@ func dockerEval(ctx context.Context, cli *client.Client, payload *Payload) (*Doc
 			text := scanner.Text()
 			text = text[8:]
 			if len(text) > 0 {
-				if err := SpecialWrite(w, text); err != nil {
+				if err := writeLine(w, text); err != nil {
 					log.Fatalf("system err: %v", err)
 					return
 				}
