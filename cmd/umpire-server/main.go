@@ -91,7 +91,7 @@ func NewUmpireServer(localAgent *umpire.Agent) *UmpireServer {
 		return nil
 	}
 	e := echo.New()
-	us := &UmpireServer{
+	server := &UmpireServer{
 		localAgent,
 		e,
 	}
@@ -103,12 +103,12 @@ func NewUmpireServer(localAgent *umpire.Agent) *UmpireServer {
 	e.Use(middleware.CORS())
 
 	// Routes
-	e.POST("/judge", us.judge)
-	e.POST("/run", us.run)
-	e.POST("/validate", us.validate)
-	e.POST("/execute", us.execute)
+	e.POST("/judge", server.judge)
+	e.POST("/run", server.run)
+	e.POST("/validate", server.validate)
+	e.POST("/execute", server.execute)
 
-	return us
+	return server
 }
 
 func (us *UmpireServer) judge(c echo.Context) error {
