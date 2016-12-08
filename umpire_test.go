@@ -4,19 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
-
-func printStruct(v interface{}) {
-	out, err := json.Marshal(v)
-	if err != nil {
-		panic(err)
-	}
-
-	fmt.Println(string(out))
-
-}
 
 func TestReadFiles(t *testing.T) {
 	_, err := readFiles(map[string]io.Reader{
@@ -29,14 +21,42 @@ func TestReadFiles(t *testing.T) {
 	//printStruct(out)
 }
 
-// func TestReadSoln(t *testing.T) {
-// 	u := &Agent{}
-// 	out, err := u.ReadSoln("/Users/madhavjha/src/github.com/maddyonline/problems/problem-1/solution")
-// 	if err != nil {
-// 		t.Fail()
-// 	}
-// 	printStruct(out)
-// }
+func TestReadSoln(t *testing.T) {
+	gopath := os.Getenv("GOPATH")
+	dir := filepath.Join(gopath, "src/github.com/maddyonline/problems")
+	u := &Agent{
+		ProblemsDir: dir,
+	}
+	p := &Payload{
+		Problem: &Problem{
+			Id: "problem-1",
+		},
+	}
+	out, err := u.ReadSoln(p)
+	if err != nil {
+		fmt.Printf("%v", err)
+	}
+	printStruct(out)
+}
+
+func TestJudgeDefault(t *testing.T) {
+	gopath := os.Getenv("GOPATH")
+	dir := filepath.Join(gopath, "src/github.com/maddyonline/problems")
+	agent := &Agent{}
+	prepareAgent(agent, map[string]string{"problemsdir": dir})
+	p := &Payload{
+		Problem: &Problem{
+			Id: "problem-1",
+		},
+	}
+	out, err := agent.ReadSoln(p)
+	if err != nil {
+		t.Error(err)
+	}
+	out.Problem = &Problem{Id: "problem-1"}
+	resp := JudgeDefault(agent, out)
+	printStruct(resp)
+}
 
 var raw = `{
   "prob-1": {

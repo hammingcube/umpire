@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/docker/docker/client"
@@ -11,6 +12,7 @@ import (
 	"io"
 	"io/ioutil"
 	"math/rand"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -140,6 +142,9 @@ func (u *Agent) JudgeAll(ctx context.Context, payload *Payload, stdout, stderr i
 	var wg sync.WaitGroup
 	ctx, cancel := context.WithCancel(ctx)
 	errors := make(chan error)
+	printStruct(u)
+	fmt.Println("---")
+	printStruct(payload)
 	testcases, err := u.loadTestCases(u.ProblemsDir, payload)
 	if err != nil {
 		return err
@@ -342,4 +347,66 @@ func RandStringRunes(n int) string {
 		b[i] = letterRunes[rand.Intn(len(letterRunes))]
 	}
 	return string(b)
+}
+
+func fetchProblems(apiUrl string) (map[string]*JudgeData, error) {
+	url := fmt.Sprintf("%s/problems", apiUrl)
+	log.Infof("Sending request to %s", url)
+	req, err := http.NewRequest("GET", url, nil)
+	req.Header.Add("content-type", "application/json")
+	if err != nil {
+		return nil, err
+	}
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+	v := map[string]*JudgeData{}
+	if err := json.NewDecoder(res.Body).Decode(&v); err != nil {
+		return nil, err
+	}
+	log.Infof("fetchProblems: number of problems=%d", len(v))
+	return v, nil
+}
+
+func prepareAgent(agent *Agent, values map[string]string) error {
+	if agent.Client == nil {
+		cli, err := client.NewEnvClient()
+		if err != nil {
+			return err
+		}
+		agent.Client = cli
+		log.Info("Successfully initialized docker client")
+	}
+
+	if values == nil {
+		return nil
+	}
+	if serverdb, ok := values["serverdb"]; ok {
+		log.Infof("Fetching problems from %s", serverdb)
+		data, err := fetchProblems(serverdb)
+		if err != nil {
+			return err
+		}
+		agent.Data = data
+	}
+	if problemsdir, ok := values["problemsdir"]; ok {
+		problemsDir, err := filepath.Abs(problemsdir)
+		if err != nil {
+			return err
+		}
+		agent.ProblemsDir = problemsDir
+		log.Infof("Using `%s` as problems directory", problemsDir)
+		return nil
+	}
+	return nil
+}
+
+func printStruct(v interface{}) {
+	out, err := json.Marshal(v)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(string(out))
 }
