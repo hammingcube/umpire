@@ -129,8 +129,6 @@ var raw = `{
   }
 }`
 
-var newpayload = `{"problem":{"id":"prob-2"},"language":"cpp","stdin":"here\nhellotherehowareyou\ncol\nteh\reallynice\ncurse\nof\ndimensionality\n","files":[{"name":"main.cpp","content":"# include <iostream>\nusing namespace std;\nint main() {string s;while(cin >> s) {cout << s.size() << endl;}}"}]}`
-
 func TestDecoding(t *testing.T) {
 	v := map[string]*JudgeData{}
 	err := json.NewDecoder(strings.NewReader(raw)).Decode(&v)
@@ -139,4 +137,18 @@ func TestDecoding(t *testing.T) {
 		t.Fail()
 	}
 	//fmt.Printf("%#v\n", v)
+}
+
+var rawpayload = `{"problem":{"id":"prob-2"},"language":"cpp","stdin":"here\nhellotherehowareyou\ncol\nteh\reallynice\ncurse\nof\ndimensionality\n","files":[{"name":"main.cpp","content":"# include <iostream>\nusing namespace std;\nint main() {string s;while(cin >> s) {cout << s.size() << endl;}}"}]}`
+
+func TestNewAgentExecution(t *testing.T) {
+	agent, err := NewAgent(nil, nil, nil)
+	if err != nil {
+		t.Errorf("Error: %v", err)
+	}
+	incoming := &Payload{}
+	if err := json.NewDecoder(strings.NewReader(rawpayload)).Decode(incoming); err != nil {
+		t.Errorf("Error: %v", err)
+	}
+	json.NewEncoder(os.Stdout).Encode(ExecuteDefault(agent, incoming))
 }
