@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/maddyonline/umpire"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
@@ -48,7 +49,7 @@ func assertMapEqual(t *testing.T, got, expected map[string]string) {
 }
 
 func TestEndToEnd(t *testing.T) {
-	agent, err := NewUmpireAgent()
+	agent, err := umpire.NewAgent(nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

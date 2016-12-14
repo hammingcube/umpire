@@ -32,7 +32,11 @@ func TestReadSolution(t *testing.T) {
 func TestRunDefault(t *testing.T) {
 	gopath := os.Getenv("GOPATH")
 	dir := filepath.Join(gopath, "src/github.com/maddyonline/problems")
-	agent, err := NewAgent(nil, &dir, nil)
+	data := map[string]*JudgeData{}
+	if err := ReadAllProblems(data, dir); err != nil {
+		t.Error(err)
+	}
+	agent, err := NewAgent(nil, data)
 	if err != nil {
 		t.Error(err)
 	}
@@ -47,9 +51,6 @@ func TestRunDefault(t *testing.T) {
 	}
 	if err != nil {
 		t.Error(err)
-	}
-	agent.Data[p.Problem.Id] = &JudgeData{
-		Solution: soln,
 	}
 	p.Stdin = "Hello\nbye\n"
 	resp := RunDefault(agent, p)
@@ -140,7 +141,7 @@ func TestDecoding(t *testing.T) {
 var rawpayload = `{"problem":{"id":"prob-2"},"language":"cpp","stdin":"here\nhellotherehowareyou\ncol\nteh\reallynice\ncurse\nof\ndimensionality\n","files":[{"name":"main.cpp","content":"# include <iostream>\nusing namespace std;\nint main() {string s;while(cin >> s) {cout << s.size() << endl;}}"}]}`
 
 func TestNewAgentExecution(t *testing.T) {
-	agent, err := NewAgent(nil, nil, nil)
+	agent, err := NewAgent(nil, nil)
 	if err != nil {
 		t.Errorf("Error: %v", err)
 	}

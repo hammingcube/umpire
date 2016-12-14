@@ -5,53 +5,55 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/docker/docker/client"
 	"github.com/labstack/echo"
 	"github.com/labstack/echo/middleware"
 	"github.com/labstack/gommon/log"
 	"github.com/maddyonline/umpire"
 	"math/rand"
 	"net/http"
-	"path/filepath"
 	"time"
 )
 
-var (
-	problems = flag.String("problems", "../../", "directory containing problems")
-	serverdb = flag.String("serverdb", "", "server to get problems list (e.g. localhost:3013)")
-)
+const REFRESH_INTERVAL = 120 * time.Second
 
-var localAgent *umpire.Agent
+var judgeDataSource []map[string]*umpire.JudgeData
+var currentSrc int
 
 func init() {
 	rand.Seed(time.Now().UnixNano())
 }
 
+var (
+	problemsdir = flag.String("problemsdir", "../../problems", "directory containing problems")
+	serverdb    = flag.String("serverdb", "", "server to get problems list (e.g. localhost:3013)")
+)
+
 func main() {
+	judgeDataSource = make([]map[string]*umpire.JudgeData, 2)
 	flag.Parse()
-	if agent, err := umpire.NewAgent(localAgent, problems, serverdb); err != nil {
+	agent, err := umpire.NewAgent(nil, nil)
+	if err != nil {
 		log.Fatalf("failed to start: %v", err)
 		return
-	} else {
-		localAgent = agent
 	}
-	go reintializeUmpireAgent(localAgent)
-	server := NewUmpireServer(localAgent)
+	updateJudgeData(agent, problemsdir, serverdb)
+	go refreshJudgeData(agent, problemsdir, serverdb)
+	server := NewUmpireServer(agent)
 	e := server.e
 	if err := e.Start(":1323"); err != nil {
 		e.Logger.Fatal(err.Error())
 	}
 }
 
-func reintializeUmpireAgent(localAgent *umpire.Agent) {
-	ticker := time.NewTicker(120 * time.Second)
+func refreshJudgeData(agent *umpire.Agent, problemsdir, serverdb *string) {
+	ticker := time.NewTicker(REFRESH_INTERVAL)
 	quit := make(chan struct{})
 	go func() {
 		for {
 			select {
 			case <-ticker.C:
-				log.Info("Reinitializing umpire agent")
-				initializeAgent(localAgent, problems, serverdb)
+				log.Info("Refreshing umpire data")
+				updateJudgeData(agent, problemsdir, serverdb)
 			case <-quit:
 				ticker.Stop()
 				return
@@ -198,44 +200,28 @@ func fetchProblems(apiUrl string) (map[string]*umpire.JudgeData, error) {
 	return v, nil
 }
 
-func NewUmpireAgent() (*umpire.Agent, error) {
-	cli, err := client.NewEnvClient()
-	if err != nil {
-		return nil, err
-	}
-	agent := &umpire.Agent{
-		Client: cli,
-	}
-	return agent, nil
-}
-
-func initializeAgent(agent *umpire.Agent, problems, serverdb *string) error {
-	if problems == nil || serverdb == nil {
-		return fmt.Errorf("need to parse flags")
-	}
-	if agent.Client == nil {
-		cli, err := client.NewEnvClient()
-		if err != nil {
-			return err
-		}
-		agent.Client = cli
-		log.Info("Successfully initialized docker client")
-	}
-
-	if *serverdb != "" {
+func updateJudgeData(agent *umpire.Agent, problemsdir, serverdb *string) {
+	m := map[string]*umpire.JudgeData{}
+	if serverdb != nil && *serverdb != "" {
 		log.Infof("Fetching problems from %s", *serverdb)
-		data, err := fetchProblems(*serverdb)
-		if err != nil {
-			return err
+		if data, err := fetchProblems(*serverdb); err == nil && data != nil {
+			for k, v := range data {
+				m[k] = v
+			}
 		}
-		agent.Data = data
-		return nil
 	}
-	problemsDir, err := filepath.Abs(*problems)
-	if err != nil {
-		return err
+	if problemsdir != nil && *problemsdir != "" {
+		data := map[string]*umpire.JudgeData{}
+		log.Infof("Using %s directory as source of problems", *problemsdir)
+		if err := umpire.ReadAllProblems(data, *problemsdir); err == nil {
+			for k, v := range data {
+				m[k] = v
+			}
+		}
 	}
-	agent.ProblemsDir = problemsDir
-	log.Infof("Using `%s` as problems directory", problemsDir)
-	return nil
+	judgeDataSource[(currentSrc+1)%2] = m
+	currentSrc = (currentSrc + 1) % 2
+	// Make the following step safe for concurrent use
+	agent.Data = judgeDataSource[currentSrc]
+	log.Infof("data=%+v", agent.Data)
 }

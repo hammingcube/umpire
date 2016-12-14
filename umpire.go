@@ -363,40 +363,19 @@ func printStruct(v interface{}) {
 	fmt.Println(string(out))
 }
 
-func NewAgent(agent *Agent, problems, serverdb *string) (*Agent, error) {
-	if agent == nil {
-		agent = &Agent{}
-	}
-	if agent.Client == nil {
-		cli, err := client.NewEnvClient()
+func NewAgent(cli *client.Client, data map[string]*JudgeData) (*Agent, error) {
+	if cli == nil {
+		dcli, err := client.NewEnvClient()
 		if err != nil {
 			return nil, err
 		}
-		agent.Client = cli
-		log.Info("Successfully initialized docker client")
+		cli = dcli
 	}
-	if serverdb != nil && *serverdb != "" {
-		log.Infof("Fetching problems from %s", *serverdb)
-		data, err := fetchProblems(*serverdb)
-		if err != nil {
-			return nil, err
-		}
-		agent.Data = data
-	}
-
-	if agent.Data == nil {
-		agent.Data = make(map[string]*JudgeData)
-	}
-
-	if problems != nil && *problems != "" {
-		problemsDir, err := filepath.Abs(*problems)
-		if err != nil {
-			return nil, err
-		}
-		agent.ProblemsDir = problemsDir
-		log.Infof("Using `%s` as problems directory", problemsDir)
-	}
-	return agent, nil
+	return &Agent{
+			Client: cli,
+			Data:   data,
+		},
+		nil
 }
 
 var UmpireCacheFilename = ".umpire.cache.json"

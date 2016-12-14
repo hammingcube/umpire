@@ -50,7 +50,7 @@ func main() {
 var rawpayload = `{"problem":{"id":"prob-2"},"language":"cpp","stdin":"here\nhellotherehowareyou\ncol\nteh\reallynice\ncurse\nof\ndimensionality\n","files":[{"name":"main.cpp","content":"# include <iostream>\nusing namespace std;\nint main() {string s;while(cin >> s) {cout << s.size() << endl;}}"}]}`
 
 func runMain() {
-	agent, err := umpire.NewAgent(nil, nil, nil)
+	agent, err := umpire.NewAgent(nil, nil)
 	if err != nil {
 		fmt.Printf("Error: %v", err)
 		return
