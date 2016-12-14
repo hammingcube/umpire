@@ -14,7 +14,9 @@ import (
 	"math/rand"
 	"net/http"
 	"os"
+	"os/user"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 )
@@ -189,63 +191,10 @@ func readFiles(files map[string]io.Reader) ([]*InMemoryFile, error) {
 		if err != nil {
 			return nil, err
 		}
+		log.Infof("Read file %s", filename)
 		ans = append(ans, &InMemoryFile{filename, string(data)})
 	}
 	return ans, nil
-}
-
-func (u *Agent) ReadSoln(payload *Payload) (*Payload, error) {
-	log.Infof("ReadSoln: number of problems = %d", len(u.Data))
-	if u.Data != nil && u.Data[payload.Problem.Id] != nil {
-		return u.Data[payload.Problem.Id].Solution, nil
-	}
-	dirname := filepath.Join(u.ProblemsDir, payload.Problem.Id, "solution")
-	supported := map[string]bool{"cpp": true}
-	files, err := ioutil.ReadDir(dirname)
-	if err != nil {
-		return nil, err
-	}
-	var lang string
-	for _, file := range files {
-		if file.IsDir() && supported[file.Name()] {
-			lang = file.Name()
-			break
-		}
-	}
-	if lang == "" {
-		return nil, errors.New("Not Found")
-	}
-
-	dir := filepath.Join(dirname, lang)
-	srcFiles, err := ioutil.ReadDir(dir)
-	if err != nil {
-		return nil, err
-	}
-	toRead := map[string]io.Reader{}
-	toClose := []io.ReadCloser{}
-	defer func() {
-		for _, f := range toClose {
-			f.Close()
-		}
-	}()
-	for _, srcFile := range srcFiles {
-		if !srcFile.IsDir() {
-			f, err := os.Open(filepath.Join(dir, srcFile.Name()))
-			if err != nil {
-				return nil, err
-			}
-			toClose = append(toClose, f)
-			toRead[srcFile.Name()] = f
-		}
-	}
-	inMemoryFiles, err := readFiles(toRead)
-	if err != nil {
-		return nil, err
-	}
-	return &Payload{
-		Language: lang,
-		Files:    inMemoryFiles,
-	}, nil
 }
 
 func (u *Agent) Execute(ctx context.Context, incoming *Payload, stdout, stderr io.Writer) error {
@@ -254,8 +203,11 @@ func (u *Agent) Execute(ctx context.Context, incoming *Payload, stdout, stderr i
 
 func (u *Agent) RunAndJudge(ctx context.Context, incoming *Payload, stdout, stderr io.Writer) error {
 	ctx, cancelFunc := context.WithCancel(ctx)
-	if u.Data == nil || u.Data[incoming.Problem.Id] == nil {
-		return errors.New("Solution not found")
+	if u.Data == nil {
+		return fmt.Errorf("Umpire agent's data not initialized: %v", u.Data)
+	}
+	if u.Data[incoming.Problem.Id] == nil {
+		return fmt.Errorf("Problem Id '%s' not found", incoming.Problem.Id)
 	}
 	log.Info("Found correct solution for problem %s", incoming.Problem.Id)
 	solnPayload := u.Data[incoming.Problem.Id].Solution
@@ -445,4 +397,150 @@ func NewAgent(agent *Agent, problems, serverdb *string) (*Agent, error) {
 		log.Infof("Using `%s` as problems directory", problemsDir)
 	}
 	return agent, nil
+}
+
+var UmpireCacheFilename = ".umpire.cache.json"
+var LangPriority = map[string]int{"cpp": 1, "python": 2, "javascript": 3, "typescript": 4}
+
+const SOLUTION_DIR = "solution"
+
+type LangDir []struct {
+	priority int
+	name     string
+}
+
+func (a LangDir) Len() int           { return len(a) }
+func (a LangDir) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+func (a LangDir) Less(i, j int) bool { return a[i].priority < a[j].priority }
+
+func ReadSolution(payload *Payload, solutionsDir string) (*Payload, error) {
+	files, err := ioutil.ReadDir(filepath.Join(solutionsDir, SOLUTION_DIR))
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	langDirs := LangDir{}
+	for _, f := range files {
+		if f.IsDir() && LangPriority[f.Name()] != 0 {
+			langDirs = append(langDirs, struct {
+				priority int
+				name     string
+			}{LangPriority[f.Name()], f.Name()})
+		}
+	}
+	if len(langDirs) < 1 {
+		return nil, fmt.Errorf("No solution found")
+	}
+	sort.Sort(langDirs)
+	language := langDirs[0].name
+	log.Infof("Using %s language for solution", language)
+	srcDir := filepath.Join(solutionsDir, "solution", language)
+	srcFiles, err := ioutil.ReadDir(srcDir)
+	if err != nil {
+		return nil, err
+	}
+
+	toRead := map[string]io.Reader{}
+	toClose := []io.ReadCloser{}
+	defer func() {
+		for _, f := range toClose {
+			f.Close()
+		}
+	}()
+	for _, srcFile := range srcFiles {
+		if !srcFile.IsDir() {
+			f, err := os.Open(filepath.Join(srcDir, srcFile.Name()))
+			if err != nil {
+				return nil, err
+			}
+			toClose = append(toClose, f)
+			toRead[srcFile.Name()] = f
+		}
+	}
+	inMemoryFiles, err := readFiles(toRead)
+	if err != nil {
+		return nil, err
+	}
+	if payload == nil {
+		payload = &Payload{}
+	}
+	payload.Language = language
+	payload.Files = inMemoryFiles
+	return payload, nil
+}
+
+func getCacheFilename() string {
+	prefix := ""
+	if user, err := user.Current(); err == nil {
+		prefix = user.HomeDir
+	}
+	return filepath.Join(prefix, UmpireCacheFilename)
+}
+
+func ReadCache() (map[string]*JudgeData, error) {
+	data := make(map[string]*JudgeData)
+	cacheFile, err := os.Open(getCacheFilename())
+	if err != nil {
+		return data, err
+	}
+	defer cacheFile.Close()
+	if err := json.NewDecoder(cacheFile).Decode(&data); err != nil {
+		return data, err
+	}
+	return data, nil
+}
+
+func ReadOneProblem(data map[string]*JudgeData, problemId, solutionsDir string) error {
+	if data == nil {
+		return nil
+	}
+	solution, err := ReadSolution(nil, solutionsDir)
+	if err != nil {
+		return err
+	}
+	if solution != nil {
+		data[problemId] = &JudgeData{
+			Solution: solution,
+		}
+	}
+	return nil
+}
+
+func ReadAllProblems(data map[string]*JudgeData, problemsDir string) error {
+	files, err := ioutil.ReadDir(problemsDir)
+	if err != nil {
+		return err
+	}
+	for _, f := range files {
+		if !f.IsDir() {
+			continue
+		}
+		if err := ReadOneProblem(data, f.Name(), filepath.Join(problemsDir, f.Name())); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func UpdateCache(data map[string]*JudgeData) error {
+	if data == nil {
+		return nil
+	}
+	var b bytes.Buffer
+	err := json.NewEncoder(&b).Encode(data)
+	if err != nil {
+		return err
+	}
+	cacheFile, err := os.Create(getCacheFilename())
+	if err != nil {
+		log.Warnf("Failed to update cache file: %v", err)
+		log.Infof("Please udpate %s with following content: %s", getCacheFilename(), b.String())
+		return err
+	}
+	defer cacheFile.Close()
+	cacheFile.Write(b.Bytes())
+	log.Info("Updated cache")
+	return nil
 }

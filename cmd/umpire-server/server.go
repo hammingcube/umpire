@@ -29,10 +29,11 @@ func init() {
 
 func main() {
 	flag.Parse()
-	localAgent = &umpire.Agent{}
-	if err := initializeAgent(localAgent, problems, serverdb); err != nil {
+	if agent, err := umpire.NewAgent(localAgent, problems, serverdb); err != nil {
 		log.Fatalf("failed to start: %v", err)
 		return
+	} else {
+		localAgent = agent
 	}
 	go reintializeUmpireAgent(localAgent)
 	server := NewUmpireServer(localAgent)
