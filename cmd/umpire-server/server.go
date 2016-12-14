@@ -25,7 +25,7 @@ func init() {
 
 var (
 	problemsdir = flag.String("problemsdir", "../../problems", "directory containing problems")
-	serverdb    = flag.String("serverdb", "", "server to get problems list (e.g. localhost:3013)")
+	serverdb    = flag.String("serverdb", "", "server to get problems list (e.g. http://localhost:3033)")
 )
 
 func main() {
@@ -208,20 +208,24 @@ func updateJudgeData(agent *umpire.Agent, problemsdir, serverdb *string) {
 			for k, v := range data {
 				m[k] = v
 			}
+		} else {
+			log.Infof("data=%+v, err=%v in fetching problems", data, err)
 		}
 	}
 	if problemsdir != nil && *problemsdir != "" {
 		data := map[string]*umpire.JudgeData{}
 		log.Infof("Using %s directory as source of problems", *problemsdir)
 		if err := umpire.ReadAllProblems(data, *problemsdir); err == nil {
+			log.Infof("number of problems read from directory=%d", len(data))
 			for k, v := range data {
 				m[k] = v
 			}
+		} else {
+			log.Infof("data=%+v, err=%v in reading problemsdir", data, err)
 		}
 	}
 	judgeDataSource[(currentSrc+1)%2] = m
 	currentSrc = (currentSrc + 1) % 2
 	// Make the following step safe for concurrent use
 	agent.Data = judgeDataSource[currentSrc]
-	log.Infof("data=%+v", agent.Data)
 }
