@@ -165,17 +165,10 @@ func (us *UmpireServer) validate(c echo.Context) error {
 	if err := c.Bind(jd); err != nil {
 		return err
 	}
-	key, err := localAgent.UpdateProblemsCache(jd)
+	err, out := umpire.Validate(localAgent, jd)
 	if err != nil {
 		return err
 	}
-	defer localAgent.RemoveFromProblemsCache(key)
-	payload := &umpire.Payload{
-		Problem:  &umpire.Problem{Id: key},
-		Language: jd.Solution.Language,
-		Files:    jd.Solution.Files,
-	}
-	out := umpire.JudgeDefault(localAgent, payload)
 	return c.JSON(http.StatusOK, out)
 }
 

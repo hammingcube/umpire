@@ -10,11 +10,18 @@ import (
 )
 
 func main() {
+	agent, err := umpire.NewAgent(nil, nil)
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		os.Exit(1)
+	}
 	updateCommand := flag.NewFlagSet("update", flag.ExitOnError)
 	overwrite := updateCommand.Bool("overwrite", false, "Overwrite existing problems")
 
 	execCommand := flag.NewFlagSet("exec", flag.ExitOnError)
 	lang := execCommand.String("lang", "", "programming language (e.g. lang=cpp)")
+
+	validateCommand := flag.NewFlagSet("validate", flag.ExitOnError)
 
 	if len(os.Args) < 2 {
 		fmt.Printf("List of subcommands:\n")
@@ -28,6 +35,8 @@ func main() {
 		updateCommand.Parse(os.Args[2:])
 	case "exec":
 		execCommand.Parse(os.Args[2:])
+	case "validate":
+		validateCommand.Parse(os.Args[2:])
 	default:
 		flag.PrintDefaults()
 		os.Exit(1)
@@ -73,16 +82,33 @@ func main() {
 			fmt.Printf("error: %v", err)
 			os.Exit(1)
 		}
-		exec(payload)
+		exec(agent, payload)
+	}
+
+	if validateCommand.Parsed() {
+		if len(validateCommand.Args()) < 1 {
+			fmt.Println("Usage: umpire validate <directory>")
+			os.Exit(1)
+		}
+		data := map[string]*umpire.JudgeData{}
+		for _, input := range validateCommand.Args() {
+			dir, err := filepath.Abs(input)
+			if err != nil {
+				fmt.Printf("Ignoring directory %s because of %v\n", input, err)
+				continue
+			}
+			umpire.ReadAllProblems(data, dir)
+		}
+		for k, jd := range data {
+			json.NewEncoder(os.Stdout).Encode(jd)
+			fmt.Println("^^^")
+			err, resp := umpire.Validate(agent, jd)
+			fmt.Printf("Validating %s, got err=%v and resp=%#v\n", k, err, resp)
+		}
 	}
 
 }
 
-func exec(incoming *umpire.Payload) {
-	agent, err := umpire.NewAgent(nil, nil)
-	if err != nil {
-		fmt.Printf("Error: %v", err)
-		return
-	}
+func exec(agent *umpire.Agent, incoming *umpire.Payload) {
 	json.NewEncoder(os.Stdout).Encode(umpire.ExecuteDefault(agent, incoming))
 }

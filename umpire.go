@@ -293,6 +293,20 @@ func RunDefault(u *Agent, incoming *Payload) *Response {
 	return &Response{Pass, "Output is as expected", stdout.String(), stderr.String()}
 }
 
+func Validate(localAgent *Agent, jd *JudgeData) (error, *Response) {
+	key, err := localAgent.UpdateProblemsCache(jd)
+	if err != nil {
+		return err, nil
+	}
+	defer localAgent.RemoveFromProblemsCache(key)
+	payload := &Payload{
+		Problem:  &Problem{Id: key},
+		Language: jd.Solution.Language,
+		Files:    jd.Solution.Files,
+	}
+	return nil, JudgeDefault(localAgent, payload)
+}
+
 var letterRunes = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
 
 func RandStringRunes(n int) string {
@@ -372,6 +386,9 @@ func NewAgent(cli *client.Client, data map[string]*JudgeData) (*Agent, error) {
 			return nil, err
 		}
 		cli = dcli
+	}
+	if data == nil {
+		data = make(map[string]*JudgeData)
 	}
 	return &Agent{
 			Client: cli,
@@ -480,7 +497,7 @@ func ReadTestcases(solutionsDir string) ([]*InputOutput, error) {
 		if err != nil {
 			return nil, err
 		}
-		output, err := ioutil.ReadFile(filepath.Join(solutionsDir, IO_DIR, inputName))
+		output, err := ioutil.ReadFile(filepath.Join(solutionsDir, IO_DIR, outputName))
 		if err != nil {
 			return nil, err
 		}
