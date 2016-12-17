@@ -7,23 +7,27 @@ import (
 	"github.com/maddyonline/umpire"
 	"os"
 	"path/filepath"
-	"strings"
 )
 
 func main() {
 	updateCommand := flag.NewFlagSet("update", flag.ExitOnError)
 	overwrite := updateCommand.Bool("overwrite", false, "Overwrite existing problems")
 
+	execCommand := flag.NewFlagSet("exec", flag.ExitOnError)
+	lang := execCommand.String("lang", "", "programming language (e.g. lang=cpp)")
+
 	if len(os.Args) < 2 {
-		fmt.Println("update is required")
-		fmt.Println("update")
-		updateCommand.PrintDefaults()
+		fmt.Printf("List of subcommands:\n")
+		fmt.Printf("update (updates problem cache)\n")
+		fmt.Printf("exec   (executes current solution)\n")
 		os.Exit(1)
 	}
 
 	switch os.Args[1] {
 	case "update":
 		updateCommand.Parse(os.Args[2:])
+	case "exec":
+		execCommand.Parse(os.Args[2:])
 	default:
 		flag.PrintDefaults()
 		os.Exit(1)
@@ -34,29 +38,49 @@ func main() {
 			fmt.Println("Usage: umpire update <directory>")
 			os.Exit(1)
 		}
-		if *overwrite {
-			fmt.Println("overwriting")
+		data, err := umpire.ReadCache()
+		if err != nil {
+			fmt.Printf("Warning: Got err %v while reading cachefile", err)
+			data = map[string]*umpire.JudgeData{}
 		}
-		fmt.Printf("Got following args: %#v\n", updateCommand.Args())
-		dir, _ := filepath.Abs(updateCommand.Args()[0])
-		data := map[string]*umpire.JudgeData{}
-		umpire.ReadAllProblems(data, dir)
+		if *overwrite {
+			fmt.Printf("Overwriting existing cachefile")
+			data = map[string]*umpire.JudgeData{}
+		}
+		for _, input := range updateCommand.Args() {
+			dir, err := filepath.Abs(input)
+			if err != nil {
+				fmt.Printf("Ignoring directory %s because of %v\n", input, err)
+				continue
+			}
+			umpire.ReadAllProblems(data, dir)
+		}
 		umpire.UpdateCache(data)
-		fmt.Printf("data: %#v\n", data)
+		fmt.Printf("updated cache, number of problems: %d\n", len(data))
+	}
+
+	if execCommand.Parsed() {
+		if len(execCommand.Args()) < 1 {
+			fmt.Println("Usage: umpire exec <directory>")
+			os.Exit(1)
+		}
+		var langPriority map[string]int
+		if *lang != "" {
+			langPriority = map[string]int{*lang: 1}
+		}
+		payload, err := umpire.ReadSolution(nil, execCommand.Args()[0], langPriority)
+		if err != nil {
+			fmt.Printf("error: %v", err)
+			os.Exit(1)
+		}
+		exec(payload)
 	}
 
 }
 
-var rawpayload = `{"problem":{"id":"prob-2"},"language":"cpp","stdin":"here\nhellotherehowareyou\ncol\nteh\reallynice\ncurse\nof\ndimensionality\n","files":[{"name":"main.cpp","content":"# include <iostream>\nusing namespace std;\nint main() {string s;while(cin >> s) {cout << s.size() << endl;}}"}]}`
-
-func runMain() {
+func exec(incoming *umpire.Payload) {
 	agent, err := umpire.NewAgent(nil, nil)
 	if err != nil {
-		fmt.Printf("Error: %v", err)
-		return
-	}
-	incoming := &umpire.Payload{}
-	if err := json.NewDecoder(strings.NewReader(rawpayload)).Decode(incoming); err != nil {
 		fmt.Printf("Error: %v", err)
 		return
 	}

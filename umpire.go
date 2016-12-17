@@ -27,12 +27,14 @@ type TestCase struct {
 	Id       string
 }
 
+type InputOutput struct {
+	Input  string `json:"input"`
+	Output string `json:"output"`
+}
+
 type JudgeData struct {
-	Solution *Payload `json:"solution"`
-	IO       []*struct {
-		Input  string `json:"input"`
-		Output string `json:"output"`
-	} `json:"io"`
+	Solution *Payload       `json:"solution"`
+	IO       []*InputOutput `json:"io"`
 }
 
 type Agent struct {
@@ -382,6 +384,7 @@ var UmpireCacheFilename = ".umpire.cache.json"
 var LangPriority = map[string]int{"cpp": 1, "python": 2, "javascript": 3, "typescript": 4}
 
 const SOLUTION_DIR = "solution"
+const IO_DIR = "testcases"
 
 type LangDir []struct {
 	priority int
@@ -392,7 +395,10 @@ func (a LangDir) Len() int           { return len(a) }
 func (a LangDir) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 func (a LangDir) Less(i, j int) bool { return a[i].priority < a[j].priority }
 
-func ReadSolution(payload *Payload, solutionsDir string) (*Payload, error) {
+func ReadSolution(payload *Payload, solutionsDir string, langPriority map[string]int) (*Payload, error) {
+	if langPriority == nil {
+		langPriority = LangPriority
+	}
 	files, err := ioutil.ReadDir(filepath.Join(solutionsDir, SOLUTION_DIR))
 	if os.IsNotExist(err) {
 		return nil, nil
@@ -402,11 +408,11 @@ func ReadSolution(payload *Payload, solutionsDir string) (*Payload, error) {
 	}
 	langDirs := LangDir{}
 	for _, f := range files {
-		if f.IsDir() && LangPriority[f.Name()] != 0 {
+		if f.IsDir() && langPriority[f.Name()] != 0 {
 			langDirs = append(langDirs, struct {
 				priority int
 				name     string
-			}{LangPriority[f.Name()], f.Name()})
+			}{langPriority[f.Name()], f.Name()})
 		}
 	}
 	if len(langDirs) < 1 {
@@ -450,6 +456,39 @@ func ReadSolution(payload *Payload, solutionsDir string) (*Payload, error) {
 	return payload, nil
 }
 
+func ReadTestcases(solutionsDir string) ([]*InputOutput, error) {
+	files, err := ioutil.ReadDir(filepath.Join(solutionsDir, IO_DIR))
+	if err != nil {
+		return nil, err
+	}
+	relevant := map[string]os.FileInfo{}
+	for _, f := range files {
+		if !f.IsDir() && strings.Contains(f.Name(), "input") || strings.Contains(f.Name(), "output") {
+			relevant[f.Name()] = f
+		}
+	}
+	io := []*InputOutput{}
+	for inputName, _ := range relevant {
+		if !strings.Contains(inputName, "input") {
+			continue
+		}
+		outputName := strings.Replace(inputName, "input", "output", 1)
+		if _, ok := relevant[outputName]; !ok {
+			continue
+		}
+		input, err := ioutil.ReadFile(filepath.Join(solutionsDir, IO_DIR, inputName))
+		if err != nil {
+			return nil, err
+		}
+		output, err := ioutil.ReadFile(filepath.Join(solutionsDir, IO_DIR, inputName))
+		if err != nil {
+			return nil, err
+		}
+		io = append(io, &InputOutput{string(input), string(output)})
+	}
+	return io, nil
+}
+
 func getCacheFilename() string {
 	prefix := ""
 	if user, err := user.Current(); err == nil {
@@ -475,7 +514,7 @@ func ReadOneProblem(data map[string]*JudgeData, problemId, solutionsDir string) 
 	if data == nil {
 		return nil
 	}
-	solution, err := ReadSolution(nil, solutionsDir)
+	solution, err := ReadSolution(nil, solutionsDir, nil)
 	if err != nil {
 		return err
 	}
@@ -483,6 +522,11 @@ func ReadOneProblem(data map[string]*JudgeData, problemId, solutionsDir string) 
 		data[problemId] = &JudgeData{
 			Solution: solution,
 		}
+	}
+	if io, err := ReadTestcases(solutionsDir); err == nil {
+		data[problemId].IO = io
+	} else {
+		log.Warnf("Error while reading input/output: %v", err)
 	}
 	return nil
 }
@@ -492,11 +536,22 @@ func ReadAllProblems(data map[string]*JudgeData, problemsDir string) error {
 	if err != nil {
 		return err
 	}
+	type args struct {
+		problemId    string
+		solutionsDir string
+	}
+	toRead := []args{}
 	for _, f := range files {
-		if !f.IsDir() {
-			continue
+		if f.IsDir() && f.Name() == SOLUTION_DIR {
+			toRead = []args{args{filepath.Base(problemsDir), problemsDir}}
+			break
 		}
-		if err := ReadOneProblem(data, f.Name(), filepath.Join(problemsDir, f.Name())); err != nil {
+		if f.IsDir() {
+			toRead = append(toRead, args{f.Name(), filepath.Join(problemsDir, f.Name())})
+		}
+	}
+	for _, r := range toRead {
+		if err := ReadOneProblem(data, r.problemId, r.solutionsDir); err != nil {
 			return err
 		}
 	}

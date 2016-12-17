@@ -24,7 +24,7 @@ func TestReadFiles(t *testing.T) {
 func TestReadSolution(t *testing.T) {
 	gopath := os.Getenv("GOPATH")
 	dir := filepath.Join(gopath, "src/github.com/maddyonline/problems/problem-1")
-	if _, err := ReadSolution(nil, dir); err != nil {
+	if _, err := ReadSolution(nil, dir, nil); err != nil {
 		t.Error(err)
 	}
 }
@@ -45,7 +45,7 @@ func TestRunDefault(t *testing.T) {
 			Id: "problem-1",
 		},
 	}
-	soln, err := ReadSolution(p, filepath.Join(dir, p.Problem.Id))
+	soln, err := ReadSolution(p, filepath.Join(dir, p.Problem.Id), nil)
 	if soln == nil {
 		t.Fatalf("Got nil solution")
 	}
@@ -167,6 +167,17 @@ func TestReadAll(t *testing.T) {
 	data := map[string]*JudgeData{}
 	gopath := os.Getenv("GOPATH")
 	dir := filepath.Join(gopath, "src/github.com/maddyonline/problems")
+	if err := ReadAllProblems(data, dir); err != nil {
+		t.Error(err)
+	}
+	UpdateCache(data)
+}
+
+func TestReadAllButReallyJustOne(t *testing.T) {
+	UmpireCacheFilename = ".umpire_new_test.cache.json"
+	data := map[string]*JudgeData{}
+	gopath := os.Getenv("GOPATH")
+	dir := filepath.Join(gopath, "src/github.com/maddyonline/problems/problem-1")
 	if err := ReadAllProblems(data, dir); err != nil {
 		t.Error(err)
 	}
