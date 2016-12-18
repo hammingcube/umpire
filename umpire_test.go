@@ -4,11 +4,43 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/ioutil"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestReadSolutionFiltersFilesByExtension(t *testing.T) {
+	content := []byte("# some content\n")
+	dir, err := ioutil.TempDir(".", "example")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer os.RemoveAll(dir) // clean up
+	if err := os.MkdirAll(filepath.Join(dir, "solution/python"), 0777); err != nil {
+		log.Fatal(err)
+	}
+	finaldir := filepath.Join(dir, "solution/python")
+
+	if err := ioutil.WriteFile(filepath.Join(finaldir, "abc.py"), content, 0666); err != nil {
+		log.Fatal(err)
+	}
+	if err := ioutil.WriteFile(filepath.Join(finaldir, "abc.pyc"), content, 0666); err != nil {
+		log.Fatal(err)
+	}
+	payload, err := ReadSolution(nil, dir, map[string]int{"python": 1})
+	if err != nil {
+		log.Fatal(err)
+	}
+	if len(payload.Files) != 1 {
+		t.Errorf("Got unexpected number of files: %d", len(payload.Files))
+	}
+	if payload.Files[0].Name != "abc.py" {
+		t.Errorf("Unexpected filename: %s", payload.Files[0].Name)
+	}
+}
 
 func TestReadFiles(t *testing.T) {
 	_, err := readFiles(map[string]io.Reader{

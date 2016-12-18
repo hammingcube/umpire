@@ -396,6 +396,10 @@ func NewAgent(cli *client.Client, data map[string]*JudgeData) (*Agent, error) {
 
 var UmpireCacheFilename = ".umpire.cache.json"
 var LangPriority = map[string]int{"cpp": 1, "python": 2, "javascript": 3, "typescript": 4}
+var SourceFilesWhitelist = map[string]map[string]bool{
+	"cpp":    map[string]bool{".cpp": true, ".CPP": true, ".h": true, ".H": true},
+	"python": map[string]bool{".py": true, ".PY": true},
+}
 
 const SOLUTION_DIR = "solution"
 const IO_DIR = "testcases"
@@ -449,13 +453,14 @@ func ReadSolution(payload *Payload, solutionsDir string, langPriority map[string
 		}
 	}()
 	for _, srcFile := range srcFiles {
-		if !srcFile.IsDir() {
-			f, err := os.Open(filepath.Join(srcDir, srcFile.Name()))
+		isDir, fname, fext := srcFile.IsDir(), srcFile.Name(), filepath.Ext(srcFile.Name())
+		if !isDir && SourceFilesWhitelist[language][fext] {
+			f, err := os.Open(filepath.Join(srcDir, fname))
 			if err != nil {
 				return nil, err
 			}
 			toClose = append(toClose, f)
-			toRead[srcFile.Name()] = f
+			toRead[fname] = f
 		}
 	}
 	inMemoryFiles, err := readFiles(toRead)
