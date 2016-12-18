@@ -146,9 +146,6 @@ func (u *Agent) JudgeAll(ctx context.Context, payload *Payload, stdout, stderr i
 	var wg sync.WaitGroup
 	ctx, cancel := context.WithCancel(ctx)
 	errors := make(chan error)
-	printStruct(u)
-	fmt.Println("---")
-	printStruct(payload)
 	testcases, err := u.loadTestCases(u.ProblemsDir, payload)
 	if err != nil {
 		return err

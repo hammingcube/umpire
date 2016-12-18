@@ -100,8 +100,6 @@ func main() {
 			umpire.ReadAllProblems(data, dir)
 		}
 		for k, jd := range data {
-			json.NewEncoder(os.Stdout).Encode(jd)
-			fmt.Println("^^^")
 			err, resp := umpire.Validate(agent, jd)
 			fmt.Printf("Validating %s, got err=%v and resp=%#v\n", k, err, resp)
 		}
