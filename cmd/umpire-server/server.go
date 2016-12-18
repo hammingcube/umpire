@@ -24,7 +24,8 @@ func init() {
 }
 
 var (
-	problemsdir = flag.String("problemsdir", "../../problems", "directory containing problems")
+	cachefile   = flag.String("cachefile", "~/.umpire.cache.json", "cache file for problems")
+	problemsdir = flag.String("problemsdir", "", "directory containing problems")
 	serverdb    = flag.String("serverdb", "", "server to get problems list (e.g. http://localhost:3033)")
 )
 
@@ -36,7 +37,7 @@ func main() {
 		log.Fatalf("failed to start: %v", err)
 		return
 	}
-	updateJudgeData(agent, problemsdir, serverdb)
+	updateJudgeData(agent, cachefile, problemsdir, serverdb)
 	go refreshJudgeData(agent, problemsdir, serverdb)
 	server := NewUmpireServer(agent)
 	e := server.e
@@ -53,7 +54,7 @@ func refreshJudgeData(agent *umpire.Agent, problemsdir, serverdb *string) {
 			select {
 			case <-ticker.C:
 				log.Info("Refreshing umpire data")
-				updateJudgeData(agent, problemsdir, serverdb)
+				updateJudgeData(agent, cachefile, problemsdir, serverdb)
 			case <-quit:
 				ticker.Stop()
 				return
@@ -193,18 +194,8 @@ func fetchProblems(apiUrl string) (map[string]*umpire.JudgeData, error) {
 	return v, nil
 }
 
-func updateJudgeData(agent *umpire.Agent, problemsdir, serverdb *string) {
+func updateJudgeData(agent *umpire.Agent, cachefile, problemsdir, serverdb *string) {
 	m := map[string]*umpire.JudgeData{}
-	if serverdb != nil && *serverdb != "" {
-		log.Infof("Fetching problems from %s", *serverdb)
-		if data, err := fetchProblems(*serverdb); err == nil && data != nil {
-			for k, v := range data {
-				m[k] = v
-			}
-		} else {
-			log.Infof("data=%+v, err=%v in fetching problems", data, err)
-		}
-	}
 	if problemsdir != nil && *problemsdir != "" {
 		data := map[string]*umpire.JudgeData{}
 		log.Infof("Using %s directory as source of problems", *problemsdir)
@@ -217,8 +208,32 @@ func updateJudgeData(agent *umpire.Agent, problemsdir, serverdb *string) {
 			log.Infof("data=%+v, err=%v in reading problemsdir", data, err)
 		}
 	}
+
+	if cachefile != nil && *cachefile != "" {
+		log.Infof("Using %s as source of problems", umpire.UmpireCacheFilename)
+		if data, err := umpire.ReadCache(); err == nil {
+			log.Infof("number of problems read from directory=%d", len(data))
+			for k, v := range data {
+				m[k] = v
+			}
+		} else {
+			log.Infof("data=%+v, err=%v in reading problemsdir", data, err)
+		}
+	}
+
+	if serverdb != nil && *serverdb != "" {
+		log.Infof("Fetching problems from %s", *serverdb)
+		if data, err := fetchProblems(*serverdb); err == nil && data != nil {
+			for k, v := range data {
+				m[k] = v
+			}
+		} else {
+			log.Infof("data=%+v, err=%v in fetching problems", data, err)
+		}
+	}
 	judgeDataSource[(currentSrc+1)%2] = m
 	currentSrc = (currentSrc + 1) % 2
 	// Make the following step safe for concurrent use
 	agent.Data = judgeDataSource[currentSrc]
+	log.Infof("data=%+v", agent.Data)
 }
