@@ -196,10 +196,6 @@ func readFiles(files map[string]io.Reader) ([]*InMemoryFile, error) {
 	return ans, nil
 }
 
-func (u *Agent) Execute(ctx context.Context, incoming *Payload, stdout, stderr io.Writer) error {
-	return DockerRun(ctx, u.Client, incoming, stdout, stderr)
-}
-
 func (u *Agent) RunAndJudge(ctx context.Context, incoming *Payload, stdout, stderr io.Writer) error {
 	ctx, cancelFunc := context.WithCancel(ctx)
 	if u.Data == nil {
@@ -267,17 +263,23 @@ func JudgeDefault(u *Agent, payload *Payload) *Response {
 	}
 }
 
-func ExecuteDefault(u *Agent, incoming *Payload) *Response {
-	var stdout, stderr bytes.Buffer
-	err := u.Execute(context.Background(), incoming, &stdout, &stderr)
-	log.Printf("Execute: %#v", err)
-	if err != nil {
-		return &Response{Fail, err.Error(), stdout.String(), stderr.String()}
+func (u *Agent) Execute(ctx context.Context, incoming *Payload) (*PayloadResult, error) {
+	return payloadRun(ctx, u.Client, incoming)
+}
+
+func ExecuteDefault(u *Agent, payload *Payload) *Response {
+	pr, err := u.Execute(context.Background(), payload)
+	resp := &Response{}
+	if err != nil || pr != nil && pr.Stderr != "" {
+		resp.Status = Fail
+	} else {
+		resp.Status = Pass
 	}
-	if stderr.String() != "" {
-		return &Response{Fail, "Error while running program", stdout.String(), stderr.String()}
+	if pr != nil {
+		resp.Stdout = pr.Stdout
+		resp.Stderr = pr.Stderr
 	}
-	return &Response{Pass, "", stdout.String(), stderr.String()}
+	return resp
 }
 
 func RunDefault(u *Agent, incoming *Payload) *Response {
