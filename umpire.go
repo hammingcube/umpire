@@ -279,6 +279,9 @@ func ExecuteDefault(u *Agent, payload *Payload) *Response {
 		resp.Stdout = pr.Stdout
 		resp.Stderr = pr.Stderr
 	}
+	if err != nil {
+		resp.Details = err.Error()
+	}
 	return resp
 }
 

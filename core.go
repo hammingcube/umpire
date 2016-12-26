@@ -16,7 +16,7 @@ import (
 type PayloadResult struct {
 	Stdout string `json:"stdout"`
 	Stderr string `json:"stderr"`
-	Error  string `json:"stderr"`
+	Error  string `json:"error"`
 }
 
 func payloadRun(ctx context.Context, cli *client.Client, payload *Payload) (*PayloadResult, error) {
@@ -83,6 +83,7 @@ func payloadRun(ctx context.Context, cli *client.Client, payload *Payload) (*Pay
 		return nil, err
 	}
 	out, err := ioutil.ReadAll(stdout)
+	log.Infof("payloadRun: %q", string(out))
 	if err != nil {
 		return nil, err
 	}
