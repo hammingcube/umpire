@@ -445,6 +445,10 @@ func ReadSolution(payload *Payload, solutionsDir string, langPriority map[string
 	language := langDirs[0].name
 	log.Infof("Using %s language for solution", language)
 	srcDir := filepath.Join(solutionsDir, "solution", language)
+	return LoadFiles(payload, srcDir, language, "")
+}
+
+func LoadFiles(payload *Payload, srcDir, language, stdin string) (*Payload, error) {
 	srcFiles, err := ioutil.ReadDir(srcDir)
 	if err != nil {
 		return nil, err
@@ -459,6 +463,7 @@ func ReadSolution(payload *Payload, solutionsDir string, langPriority map[string
 	}()
 	for _, srcFile := range srcFiles {
 		isDir, fname, fext := srcFile.IsDir(), srcFile.Name(), filepath.Ext(srcFile.Name())
+		log.Infof("%s: %s, extension '%s'", fname, map[bool]string{false: "not a directory", true: "a directory"}[isDir], fext)
 		if !isDir && SourceFilesWhitelist[language][fext] {
 			f, err := os.Open(filepath.Join(srcDir, fname))
 			if err != nil {
@@ -477,6 +482,11 @@ func ReadSolution(payload *Payload, solutionsDir string, langPriority map[string
 	}
 	payload.Language = language
 	payload.Files = inMemoryFiles
+	if stdin != "" {
+		if stdinBytes, err := ioutil.ReadFile(stdin); err == nil {
+			payload.Stdin = string(stdinBytes)
+		}
+	}
 	return payload, nil
 }
 

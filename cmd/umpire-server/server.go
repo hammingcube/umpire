@@ -5,12 +5,15 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/docker/docker/client"
+	"github.com/docker/go-connections/tlsconfig"
 	"github.com/labstack/echo"
 	"github.com/labstack/echo/middleware"
 	"github.com/labstack/gommon/log"
 	"github.com/maddyonline/umpire"
 	"math/rand"
 	"net/http"
+	"path/filepath"
 	"time"
 )
 
@@ -29,10 +32,42 @@ var (
 	serverdb    = flag.String("serverdb", "", "server to get problems list (e.g. http://localhost:3033)")
 )
 
+func newClient() *client.Client {
+	const DOCKER_TLS_VERIFY = "1"
+	const DOCKER_HOST = "tcp://192.168.99.100:2376"
+	const DOCKER_CERT_PATH = "/Users/maddy/.docker/machine/machines/default"
+	const DOCKER_MACHINE_NAME = "default"
+
+	const DOCKER_API_VERSION = "1.26"
+
+	var httpClient *http.Client
+	options := tlsconfig.Options{
+		CAFile:             filepath.Join(DOCKER_CERT_PATH, "ca.pem"),
+		CertFile:           filepath.Join(DOCKER_CERT_PATH, "cert.pem"),
+		KeyFile:            filepath.Join(DOCKER_CERT_PATH, "key.pem"),
+		InsecureSkipVerify: DOCKER_TLS_VERIFY == "",
+	}
+	tlsc, err := tlsconfig.Client(options)
+	if err != nil {
+		panic(err)
+	}
+	httpClient = &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: tlsc,
+		},
+	}
+
+	cli, err := client.NewClient(DOCKER_HOST, DOCKER_API_VERSION, httpClient, nil)
+	if err != nil {
+		panic(err)
+	}
+	return cli
+}
+
 func main() {
 	judgeDataSource = make([]map[string]*umpire.JudgeData, 2)
 	flag.Parse()
-	agent, err := umpire.NewAgent(nil, nil)
+	agent, err := umpire.NewAgent(newClient(), nil)
 	if err != nil {
 		log.Fatalf("failed to start: %v", err)
 		return
