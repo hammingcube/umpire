@@ -21,7 +21,7 @@ import (
 
 const (
 	SECRETS_SRC            = "src/github.com/maddyonline/optcode-secrets/optimal-code-admin.json"
-	DEFAULT_API_VERSION    = "1.26"
+	DEFAULT_API_VERSION    = "1.24"
 	DOCKER_TLS_VERIFY_KEY  = "DOCKER_TLS_VERIFY"
 	DOCKER_HOST_KEY        = "DOCKER_HOST"
 	DOCKER_CERT_PATH_KEY   = "DOCKER_CERT_PATH"
@@ -310,6 +310,7 @@ func InitMachines(names []string) {
 	Init()
 	for _, name := range names {
 		if name == "local" {
+			os.Setenv(DOCKER_API_VERSION_KEY, DEFAULT_API_VERSION)
 			cli, err := client.NewEnvClient()
 			dir.Add(cli, err, LocalEnv, name)
 			continue
