@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"github.com/docker/docker/client"
 	"github.com/docker/go-connections/tlsconfig"
+	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/google"
+	"gopkg.in/zabawaba99/firego.v1"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -37,6 +40,10 @@ func workdir() (*string, error) {
 
 func Init() error {
 	wd, err := workdir()
+	if err != nil {
+		return err
+	}
+	firebaseDB, err = authenticatedFirebase()
 	if err != nil {
 		return err
 	}
@@ -80,6 +87,51 @@ func (d *ClientsDir) Add(cli *client.Client, err error, clitype ClientType) {
 }
 
 var dir *ClientsDir = &ClientsDir{}
+
+func authenticatedFirebase() (*firego.Firebase, error) {
+	gopath := os.Getenv("GOPATH")
+	secretFile := filepath.Join(gopath, "src/github.com/maddyonline/optcode-secrets/optimal-code-admin.json")
+	d, err := ioutil.ReadFile(secretFile)
+	if err != nil {
+		return nil, err
+	}
+	conf, err := google.JWTConfigFromJSON(d,
+		"https://www.googleapis.com/auth/userinfo.email",
+		"https://www.googleapis.com/auth/firebase.database")
+	if err != nil {
+		return nil, err
+	}
+
+	f := firego.New("https://optimal-code-admin.firebaseio.com", conf.Client(oauth2.NoContext))
+	return f, nil
+}
+
+var firebaseDB *firego.Firebase
+
+func readFromFirebase(f *firego.Firebase, name string) (map[string][]byte, error) {
+	data := map[string][]byte{}
+	if err := f.Child(name).Value(&data); err != nil {
+		return nil, err
+	}
+	newdata := map[string][]byte{}
+	for k, _ := range data {
+		k2 := strings.Replace(k, "_", ".", -1)
+		newdata[k2] = data[k]
+	}
+	return newdata, nil
+}
+
+func saveToFirebase(f *firego.Firebase, path string, data map[string][]byte) error {
+	newdata := map[string][]byte{}
+	for k, _ := range data {
+		k2 := strings.Replace(k, ".", "_", -1)
+		newdata[k2] = data[k]
+	}
+	if err := f.Child(path).Set(newdata); err != nil {
+		return err
+	}
+	return nil
+}
 
 func ReadEnvFile(r io.Reader) (map[string]string, error) {
 	s, err := ioutil.ReadAll(r)
@@ -141,7 +193,7 @@ func getFilesForRelocation(envmap map[string]string) (map[string][]byte, error) 
 	return m, nil
 }
 
-func relocate(name string, m map[string][]byte) (*string, error) {
+func relocate(name string, m map[string][]byte, updateDB bool) (*string, error) {
 	dir := filepath.Join(WorkingDir, "docker_root", name, ".docker")
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return nil, err
@@ -151,7 +203,30 @@ func relocate(name string, m map[string][]byte) (*string, error) {
 			return nil, err
 		}
 	}
+	if updateDB {
+		err := saveToFirebase(firebaseDB, name, m)
+		if err != nil {
+			return nil, err
+		}
+	}
 	return &dir, nil
+}
+
+func RestoreEnvmapFromDB(name string) error {
+	m, err := readFromFirebase(firebaseDB, name)
+	if err != nil {
+		return err
+	}
+	if m == nil {
+		return fmt.Errorf("Got empty map from DB")
+	}
+	keys := []string{}
+	for k := range m {
+		keys = append(keys, k)
+	}
+	fmt.Printf("KEYS: %v\n", keys)
+	_, err = relocate(name, m, false)
+	return err
 }
 
 func RelocateEnvFile(name string, r io.Reader) (map[string]string, error) {
@@ -171,7 +246,7 @@ func RelocateEnvFile(name string, r io.Reader) (map[string]string, error) {
 		return nil, err
 	}
 
-	path, err := relocate(name, m)
+	path, err := relocate(name, m, true)
 	if err != nil {
 		return nil, err
 	}

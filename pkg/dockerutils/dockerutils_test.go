@@ -1,6 +1,8 @@
 package dockerutils
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -13,6 +15,11 @@ export DOCKER_MACHINE_NAME="awsdocker"
 # Run this command to configure your shell:
 # eval $(docker-machine env awsdocker)
 `
+
+func TestAuthenticatedFirebase(t *testing.T) {
+	fb, err := authenticatedFirebase()
+	t.Logf("%v, %v", fb, err)
+}
 
 func TestInitMachines(t *testing.T) {
 	Init()
@@ -38,9 +45,42 @@ func TestSaveEnvFile(t *testing.T) {
 	}
 }
 
+func SaveEnvMap(name string, envmap map[string]string) {
+
+}
+
+func TestRelocateEnvFollowedByRestore(t *testing.T) {
+	Init()
+	_, err := RelocateEnvFile("remotedocker", strings.NewReader(EXAMPLE_CONFIG))
+	if err != nil {
+		t.Error(err)
+	}
+	os.RemoveAll(filepath.Join(WorkingDir, "docker_root", "remotedocker"))
+}
+
+func TestRestoreEnvmapFromDB(t *testing.T) {
+	Init()
+	if err := RestoreEnvmapFromDB("remotedocker"); err != nil {
+		t.Error(err)
+	}
+}
+
+func TestReadFromFirebase(t *testing.T) {
+	Init()
+	m, err := readFromFirebase(firebaseDB, "remotedocker")
+	if err != nil {
+		t.Error(err)
+	}
+	keys := []string{}
+	for k := range m {
+		keys = append(keys, k)
+	}
+	t.Logf("%v", keys)
+}
+
 func TestRelocateEnvFile(t *testing.T) {
 	Init()
-	envmap, err := RelocateEnvFile("my-remote-docker.env", strings.NewReader(EXAMPLE_CONFIG))
+	envmap, err := RelocateEnvFile("myremotedocker", strings.NewReader(EXAMPLE_CONFIG))
 	if err != nil {
 		t.Error(err)
 	}
