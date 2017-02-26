@@ -14,6 +14,42 @@ export DOCKER_MACHINE_NAME="awsdocker"
 # eval $(docker-machine env awsdocker)
 `
 
+func TestInitMachines(t *testing.T) {
+	Init()
+	err := InitMachines()
+	if err != nil {
+		t.Error(err)
+	}
+	t.Logf("machines: %s", ListMachines())
+}
+
+func TestWorkingDir(t *testing.T) {
+	s, err := workdir()
+	if s == nil || err != nil {
+		t.Error(err)
+	}
+	t.Logf("Got wd=%s", *s)
+}
+
+func TestSaveEnvFile(t *testing.T) {
+	Init()
+	if err := SaveEnvFile("my-remote-docker.env", strings.NewReader(EXAMPLE_CONFIG)); err != nil {
+		t.Error(err)
+	}
+}
+
+func TestRelocateEnvFile(t *testing.T) {
+	Init()
+	envmap, err := RelocateEnvFile("my-remote-docker.env", strings.NewReader(EXAMPLE_CONFIG))
+	if err != nil {
+		t.Error(err)
+	}
+	t.Logf("%v", envmap)
+	cli, err := NewEnvMapClient(envmap)
+	dir.Add(cli, err, RemoteEnv)
+	t.Logf(ListMachines())
+}
+
 func TestReadEnvFile(t *testing.T) {
 	r := strings.NewReader(EXAMPLE_CONFIG)
 	m, err := ReadEnvFile(r)

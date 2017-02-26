@@ -1,6 +1,7 @@
 package dockerutils
 
 import (
+	"context"
 	"fmt"
 	"github.com/docker/docker/client"
 	"github.com/docker/go-connections/tlsconfig"
@@ -8,10 +9,40 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
+	"os/user"
 	"path/filepath"
 	"strconv"
 	"strings"
 )
+
+var WorkingDir string
+
+func workdir() (*string, error) {
+	const WORKDIR = "dockerutils"
+	usr, err := user.Current()
+	if err != nil {
+		return nil, err
+	}
+
+	wd, err := filepath.Abs(filepath.Join(usr.HomeDir, WORKDIR))
+	if err != nil {
+		return nil, err
+	}
+	err = os.MkdirAll(filepath.Join(wd, "cache"), 0700)
+	if err != nil {
+		return nil, err
+	}
+	return &wd, nil
+}
+
+func Init() error {
+	wd, err := workdir()
+	if err != nil {
+		return err
+	}
+	WorkingDir = *wd
+	return nil
+}
 
 const DEFAULT_API_VERSION = "1.26"
 
@@ -48,7 +79,7 @@ func (d *ClientsDir) Add(cli *client.Client, err error, clitype ClientType) {
 	d.Entries = append(d.Entries, Entry{cli, err, clitype})
 }
 
-var dir *ClientsDir
+var dir *ClientsDir = &ClientsDir{}
 
 func ReadEnvFile(r io.Reader) (map[string]string, error) {
 	s, err := ioutil.ReadAll(r)
@@ -97,6 +128,65 @@ func verifyFilesAccessible(envmap map[string]string) error {
 	return nil
 }
 
+func getFilesForRelocation(envmap map[string]string) (map[string][]byte, error) {
+	m := map[string][]byte{}
+	for _, filename := range []string{"ca.pem", "cert.pem", "key.pem"} {
+		f := filepath.Join(envmap[DOCKER_CERT_PATH_KEY], filename)
+		data, err := ioutil.ReadFile(f)
+		if err != nil {
+			return nil, err
+		}
+		m[filename] = data
+	}
+	return m, nil
+}
+
+func relocate(name string, m map[string][]byte) (*string, error) {
+	dir := filepath.Join(WorkingDir, "docker_root", name, ".docker")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return nil, err
+	}
+	for fname, content := range m {
+		if err := ioutil.WriteFile(filepath.Join(dir, fname), content, 0600); err != nil {
+			return nil, err
+		}
+	}
+	return &dir, nil
+}
+
+func RelocateEnvFile(name string, r io.Reader) (map[string]string, error) {
+	envmap, err := ReadEnvFile(r)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := verifyKeysPresent(envmap); err != nil {
+		return nil, err
+	}
+	if err := verifyFilesAccessible(envmap); err != nil {
+		return nil, err
+	}
+	m, err := getFilesForRelocation(envmap)
+	if err != nil {
+		return nil, err
+	}
+
+	path, err := relocate(name, m)
+	if err != nil {
+		return nil, err
+	}
+	envmap[DOCKER_CERT_PATH_KEY] = *path
+	return envmap, nil
+}
+
+func SaveEnvFile(name string, r io.Reader) error {
+	content, err := ioutil.ReadAll(r)
+	if err != nil {
+		return err
+	}
+	return ioutil.WriteFile(filepath.Join(WorkingDir, "cache", name), content, 0600)
+}
+
 func NewEnvMapClient(envmap map[string]string) (*client.Client, error) {
 	if err := verifyKeysPresent(envmap); err != nil {
 		return nil, err
@@ -127,12 +217,6 @@ func NewEnvMapClient(envmap map[string]string) (*client.Client, error) {
 	return client.NewClient(envmap[DOCKER_HOST_KEY], apiVersion, httpClient, nil)
 }
 
-func Init() {
-	dir = &ClientsDir{}
-	cli, err := client.NewEnvClient()
-	dir.Add(cli, err, LocalEnv)
-}
-
 func AddEnvMapClient(r io.Reader) error {
 	envmap, err := ReadEnvFile(r)
 	if err != nil {
@@ -143,10 +227,42 @@ func AddEnvMapClient(r io.Reader) error {
 	return nil
 }
 
+func InitMachines() error {
+	cli, err := client.NewEnvClient()
+	dir.Add(cli, err, LocalEnv)
+	if err := AddMachinesFromCache(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func AddMachinesFromCache() error {
+	dirname := filepath.Join(WorkingDir, "cache")
+	files, err := ioutil.ReadDir(dirname)
+	if err != nil {
+		return err
+	}
+	for _, f := range files {
+		if f.IsDir() || !strings.HasSuffix(f.Name(), ".env") {
+			continue
+		}
+		r, err := os.Open(filepath.Join(dirname, f.Name()))
+		if err != nil {
+			return err
+		}
+		defer r.Close()
+		if err := AddEnvMapClient(r); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func ListMachines() string {
 	arr := []string{}
 	for _, entry := range dir.Entries {
-		arr = append(arr, fmt.Sprintf("%s", entry))
+		ping, err := entry.Client.Ping(context.Background())
+		arr = append(arr, fmt.Sprintf("%s| PING: (%v, %v)", entry, ping, err))
 	}
 	return strings.Join(arr, "\n")
 }
