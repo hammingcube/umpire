@@ -22,12 +22,28 @@ func TestAuthenticatedFirebase(t *testing.T) {
 }
 
 func TestInitMachines(t *testing.T) {
-	Init()
-	err := InitMachines()
-	if err != nil {
-		t.Error(err)
-	}
+	InitMachines([]string{"myremotedocker"})
 	t.Logf("machines: %s", ListMachines())
+}
+
+func TestGetMachine(t *testing.T) {
+	InitMachines([]string{"myremotedocker", "local"})
+	m := GetMachine()
+	t.Logf("machine: %v", m)
+}
+
+func TestGetMachineBadKey(t *testing.T) {
+	InitMachines([]string{"myremotedocker2", "local"})
+	m := GetMachine()
+	t.Logf("machine: %v", m)
+	t.Logf("all:\n%s", ListMachines())
+}
+
+func TestGetMachineOrdering(t *testing.T) {
+	InitMachines([]string{"local", "myremotedocker"})
+	m := GetMachine()
+	t.Logf("machine: %v", m)
+	t.Logf("all:\n%s", ListMachines())
 }
 
 func TestWorkingDir(t *testing.T) {
@@ -45,10 +61,6 @@ func TestSaveEnvFile(t *testing.T) {
 	}
 }
 
-func SaveEnvMap(name string, envmap map[string]string) {
-
-}
-
 func TestRelocateEnvFollowedByRestore(t *testing.T) {
 	Init()
 	_, err := RelocateEnvFile("remotedocker", strings.NewReader(EXAMPLE_CONFIG))
@@ -60,9 +72,11 @@ func TestRelocateEnvFollowedByRestore(t *testing.T) {
 
 func TestRestoreEnvmapFromDB(t *testing.T) {
 	Init()
-	if err := RestoreEnvmapFromDB("remotedocker"); err != nil {
+	envmap, err := RestoreEnvmapFromDB("myremotedocker")
+	if err != nil {
 		t.Error(err)
 	}
+	t.Logf("ENVMAP: %v", envmap)
 }
 
 func TestReadFromFirebase(t *testing.T) {
@@ -86,7 +100,7 @@ func TestRelocateEnvFile(t *testing.T) {
 	}
 	t.Logf("%v", envmap)
 	cli, err := NewEnvMapClient(envmap)
-	dir.Add(cli, err, RemoteEnv)
+	dir.Add(cli, err, RemoteEnv, "myremotedocker")
 	t.Logf(ListMachines())
 }
 
@@ -106,7 +120,7 @@ func TestClients(t *testing.T) {
 	Init()
 	t.Logf("machines: %s", ListMachines())
 	r := strings.NewReader(EXAMPLE_CONFIG)
-	if err := AddEnvMapClient(r); err != nil {
+	if err := addEnvMapClient(r, "test"); err != nil {
 		t.Error(err)
 	}
 	t.Logf("machines: %s", ListMachines())

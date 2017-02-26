@@ -10,6 +10,7 @@ import (
 	"gopkg.in/zabawaba99/firego.v1"
 	"io"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"os"
 	"os/user"
@@ -18,7 +19,22 @@ import (
 	"strings"
 )
 
-var WorkingDir string
+const (
+	SECRETS_SRC            = "src/github.com/maddyonline/optcode-secrets/optimal-code-admin.json"
+	DEFAULT_API_VERSION    = "1.26"
+	DOCKER_TLS_VERIFY_KEY  = "DOCKER_TLS_VERIFY"
+	DOCKER_HOST_KEY        = "DOCKER_HOST"
+	DOCKER_CERT_PATH_KEY   = "DOCKER_CERT_PATH"
+	DOCKER_API_VERSION_KEY = "DOCKER_API_VERSION"
+)
+
+var (
+	dir         *ClientsDir = &ClientsDir{}
+	firebaseDB  *firego.Firebase
+	WorkingDir  string
+	DOCKER_KEYS = []string{DOCKER_TLS_VERIFY_KEY, DOCKER_HOST_KEY, DOCKER_CERT_PATH_KEY}
+	PEM_KEYS    = []string{"ca", "cert", "key"}
+)
 
 func workdir() (*string, error) {
 	const WORKDIR = "dockerutils"
@@ -38,6 +54,10 @@ func workdir() (*string, error) {
 	return &wd, nil
 }
 
+func GetDir() *ClientsDir {
+	return dir
+}
+
 func Init() error {
 	wd, err := workdir()
 	if err != nil {
@@ -51,13 +71,6 @@ func Init() error {
 	return nil
 }
 
-const DEFAULT_API_VERSION = "1.26"
-
-const DOCKER_TLS_VERIFY_KEY = "DOCKER_TLS_VERIFY"
-const DOCKER_HOST_KEY = "DOCKER_HOST"
-const DOCKER_CERT_PATH_KEY = "DOCKER_CERT_PATH"
-const DOCKER_API_VERSION_KEY = "DOCKER_API_VERSION"
-
 type ClientType string
 
 const (
@@ -69,28 +82,27 @@ type Entry struct {
 	Client *client.Client
 	Err    error
 	Type   ClientType
+	Name   string
 }
 
 func (cd Entry) String() string {
-	return fmt.Sprintf("Client=%v, Error=%v, Type=%v", cd.Client, cd.Err, cd.Type)
+	return fmt.Sprintf("Client=%v, Error=%v, Type=%v, Name=%s", cd.Client, cd.Err, cd.Type, cd.Name)
 }
 
 type ClientsDir struct {
 	Entries []Entry
 }
 
-func (d *ClientsDir) Add(cli *client.Client, err error, clitype ClientType) {
+func (d *ClientsDir) Add(cli *client.Client, err error, clitype ClientType, name string) {
 	if d.Entries == nil {
 		d.Entries = []Entry{}
 	}
-	d.Entries = append(d.Entries, Entry{cli, err, clitype})
+	d.Entries = append(d.Entries, Entry{cli, err, clitype, name})
 }
-
-var dir *ClientsDir = &ClientsDir{}
 
 func authenticatedFirebase() (*firego.Firebase, error) {
 	gopath := os.Getenv("GOPATH")
-	secretFile := filepath.Join(gopath, "src/github.com/maddyonline/optcode-secrets/optimal-code-admin.json")
+	secretFile := filepath.Join(gopath, SECRETS_SRC)
 	d, err := ioutil.ReadFile(secretFile)
 	if err != nil {
 		return nil, err
@@ -106,28 +118,16 @@ func authenticatedFirebase() (*firego.Firebase, error) {
 	return f, nil
 }
 
-var firebaseDB *firego.Firebase
-
-func readFromFirebase(f *firego.Firebase, name string) (map[string][]byte, error) {
-	data := map[string][]byte{}
+func readFromFirebase(f *firego.Firebase, name string) (map[string]string, error) {
+	data := map[string]string{}
 	if err := f.Child(name).Value(&data); err != nil {
 		return nil, err
 	}
-	newdata := map[string][]byte{}
-	for k, _ := range data {
-		k2 := strings.Replace(k, "_", ".", -1)
-		newdata[k2] = data[k]
-	}
-	return newdata, nil
+	return data, nil
 }
 
-func saveToFirebase(f *firego.Firebase, path string, data map[string][]byte) error {
-	newdata := map[string][]byte{}
-	for k, _ := range data {
-		k2 := strings.Replace(k, ".", "_", -1)
-		newdata[k2] = data[k]
-	}
-	if err := f.Child(path).Set(newdata); err != nil {
+func saveToFirebase(f *firego.Firebase, path string, data map[string]string) error {
+	if err := f.Child(path).Set(data); err != nil {
 		return err
 	}
 	return nil
@@ -161,8 +161,7 @@ func ReadEnvFile(r io.Reader) (map[string]string, error) {
 }
 
 func verifyKeysPresent(envmap map[string]string) error {
-	KEYS := []string{DOCKER_TLS_VERIFY_KEY, DOCKER_HOST_KEY, DOCKER_CERT_PATH_KEY}
-	for _, key := range KEYS {
+	for _, key := range DOCKER_KEYS {
 		if _, ok := envmap[key]; !ok {
 			return fmt.Errorf("Env map does not contain key %s", key)
 		}
@@ -180,26 +179,26 @@ func verifyFilesAccessible(envmap map[string]string) error {
 	return nil
 }
 
-func getFilesForRelocation(envmap map[string]string) (map[string][]byte, error) {
-	m := map[string][]byte{}
-	for _, filename := range []string{"ca.pem", "cert.pem", "key.pem"} {
-		f := filepath.Join(envmap[DOCKER_CERT_PATH_KEY], filename)
+func getFilesForRelocation(envmap map[string]string) (map[string]string, error) {
+	m := map[string]string{}
+	for _, filename := range PEM_KEYS {
+		f := filepath.Join(envmap[DOCKER_CERT_PATH_KEY], filename+".pem")
 		data, err := ioutil.ReadFile(f)
 		if err != nil {
 			return nil, err
 		}
-		m[filename] = data
+		m[filename] = string(data)
 	}
 	return m, nil
 }
 
-func relocate(name string, m map[string][]byte, updateDB bool) (*string, error) {
+func relocate(name string, m map[string]string, updateDB bool) (*string, error) {
 	dir := filepath.Join(WorkingDir, "docker_root", name, ".docker")
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return nil, err
 	}
-	for fname, content := range m {
-		if err := ioutil.WriteFile(filepath.Join(dir, fname), content, 0600); err != nil {
+	for _, k := range PEM_KEYS {
+		if err := ioutil.WriteFile(filepath.Join(dir, k+".pem"), []byte(m[k]), 0600); err != nil {
 			return nil, err
 		}
 	}
@@ -212,21 +211,24 @@ func relocate(name string, m map[string][]byte, updateDB bool) (*string, error) 
 	return &dir, nil
 }
 
-func RestoreEnvmapFromDB(name string) error {
+func RestoreEnvmapFromDB(name string) (map[string]string, error) {
 	m, err := readFromFirebase(firebaseDB, name)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if m == nil {
-		return fmt.Errorf("Got empty map from DB")
+		return nil, fmt.Errorf("Got empty map from DB")
 	}
-	keys := []string{}
-	for k := range m {
-		keys = append(keys, k)
+	path, err := relocate(name, m, false)
+	if err != nil {
+		return nil, err
 	}
-	fmt.Printf("KEYS: %v\n", keys)
-	_, err = relocate(name, m, false)
-	return err
+	envmap := map[string]string{}
+	for _, k := range DOCKER_KEYS {
+		envmap[k] = m[k]
+	}
+	envmap[DOCKER_CERT_PATH_KEY] = *path
+	return envmap, nil
 }
 
 func RelocateEnvFile(name string, r io.Reader) (map[string]string, error) {
@@ -245,7 +247,9 @@ func RelocateEnvFile(name string, r io.Reader) (map[string]string, error) {
 	if err != nil {
 		return nil, err
 	}
-
+	for _, k := range DOCKER_KEYS {
+		m[k] = envmap[k]
+	}
 	path, err := relocate(name, m, true)
 	if err != nil {
 		return nil, err
@@ -292,26 +296,32 @@ func NewEnvMapClient(envmap map[string]string) (*client.Client, error) {
 	return client.NewClient(envmap[DOCKER_HOST_KEY], apiVersion, httpClient, nil)
 }
 
-func AddEnvMapClient(r io.Reader) error {
+func addEnvMapClient(r io.Reader, name string) error {
 	envmap, err := ReadEnvFile(r)
 	if err != nil {
 		return err
 	}
 	cli, err := NewEnvMapClient(envmap)
-	dir.Add(cli, err, RemoteEnv)
+	dir.Add(cli, err, RemoteEnv, name)
 	return nil
 }
 
-func InitMachines() error {
-	cli, err := client.NewEnvClient()
-	dir.Add(cli, err, LocalEnv)
-	if err := AddMachinesFromCache(); err != nil {
-		return err
+func InitMachines(names []string) {
+	Init()
+	for _, name := range names {
+		if name == "local" {
+			cli, err := client.NewEnvClient()
+			dir.Add(cli, err, LocalEnv, name)
+			continue
+		}
+		if envmap, err := RestoreEnvmapFromDB(name); err == nil {
+			cli, err := NewEnvMapClient(envmap)
+			dir.Add(cli, err, RemoteEnv, name)
+		}
 	}
-	return nil
 }
 
-func AddMachinesFromCache() error {
+func addMachinesFromCache() error {
 	dirname := filepath.Join(WorkingDir, "cache")
 	files, err := ioutil.ReadDir(dirname)
 	if err != nil {
@@ -326,8 +336,20 @@ func AddMachinesFromCache() error {
 			return err
 		}
 		defer r.Close()
-		if err := AddEnvMapClient(r); err != nil {
+		if err := addEnvMapClient(r, f.Name()); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+func GetMachine() *client.Client {
+	for _, entry := range dir.Entries {
+		log.Printf("Trying %s %s", entry.Name, entry.Type)
+		ping, err := entry.Client.Ping(context.Background())
+		log.Printf("Got: ping=%v, err=%v", ping, err)
+		if err == nil {
+			return entry.Client
 		}
 	}
 	return nil
