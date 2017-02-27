@@ -31,3 +31,9 @@ To start with server db:
 ```
 umpire-server -serverdb=http://localhost:3033
 ```
+
+Linux build
+```sh
+docker run --rm -it -v $PWD/files:/go/bin/linux_386 -e GOPATH=/go -w /go/src/app -e GOOS=linux -e GOARCH=386 golang go get -u -v github.com/maddyonline/umpire/...
+```
+
