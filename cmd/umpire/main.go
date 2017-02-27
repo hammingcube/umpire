@@ -14,7 +14,7 @@
 
 package main
 
-import "github.com/maddyonline/umpire/cmd/ump/cmd"
+import "github.com/maddyonline/umpire/cmd/umpire/cmd"
 
 func main() {
 	cmd.Execute()
