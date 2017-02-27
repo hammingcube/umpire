@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/docker/docker/client"
+	"github.com/maddyonline/umpire/pkg/dockerutils"
 	"strings"
 	"testing"
 )
@@ -25,9 +25,9 @@ const rawjson = `{
 `
 
 func Main() {
-	cli, err := client.NewEnvClient()
-	if err != nil {
-		fmt.Printf("Error: %v", err)
+	cli := dockerutils.NewClient()
+	if cli == nil {
+		fmt.Printf("Failed to initialize docker client")
 		return
 	}
 	p := &Payload{}

@@ -70,7 +70,7 @@ func TestRunDefault(t *testing.T) {
 		t.Error(err)
 	}
 	agent := &Agent{
-		Client: dockerutils.NewClient([]string{"myremotedocker", "local"}),
+		Client: dockerutils.NewClient(),
 		Data:   data,
 	}
 	if agent.Client == nil {
@@ -179,7 +179,7 @@ var rawpayload = `{"problem":{"id":"prob-2"},"language":"cpp","stdin":"here\nhel
 
 func TestNewAgentExecution(t *testing.T) {
 	agent := &Agent{
-		Client: dockerutils.NewClient([]string{"myremotedocker", "local"}),
+		Client: dockerutils.NewClient(),
 		Data:   make(map[string]*JudgeData),
 	}
 
