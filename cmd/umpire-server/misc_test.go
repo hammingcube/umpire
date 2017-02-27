@@ -5,8 +5,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/docker/docker/client"
 	"github.com/maddyonline/umpire"
+	"github.com/maddyonline/umpire/pkg/dockerutils"
 	"io/ioutil"
 	"log"
 	"os"
@@ -42,9 +42,9 @@ var payloadExample = &umpire.Payload{
 
 func TestDockerRun(t *testing.T) {
 	var b bytes.Buffer
-	cli, err := client.NewEnvClient()
-	if err != nil {
-		t.Error(err)
+	cli := dockerutils.NewClient()
+	if cli == nil {
+		t.Errorf("Failed to initialize docker client")
 	}
 	if err := umpire.DockerRun(context.Background(), cli, payloadExample, &b, os.Stderr); err != nil {
 		t.Error(err)
@@ -56,9 +56,9 @@ func TestDockerRun(t *testing.T) {
 }
 
 func TestDockerJudge(t *testing.T) {
-	cli, err := client.NewEnvClient()
-	if err != nil {
-		t.Error(err)
+	cli := dockerutils.NewClient()
+	if cli == nil {
+		t.Errorf("Failed to initialize docker client")
 	}
 	expected := strings.NewReader("4\n19\n3\n3\n10\n")
 	if err := umpire.DockerJudge(context.Background(), cli, payloadExample, os.Stdout, ioutil.Discard, bufio.NewScanner(expected)); err != nil {
@@ -68,7 +68,10 @@ func TestDockerJudge(t *testing.T) {
 }
 
 func exampleDockerJudgeMulti() error {
-	cli, _ := client.NewEnvClient()
+	cli := dockerutils.NewClient()
+	if cli == nil {
+		return fmt.Errorf("Failed to initialize docker client")
+	}
 	var wg sync.WaitGroup
 	ctx, cancel := context.WithCancel(context.Background())
 	errors := make(chan error)
@@ -112,52 +115,53 @@ func exampleDockerJudgeMulti() error {
 	//log.Printf("successes: %d", sum)
 }
 
-func exampleRunAndJudge() {
-	cli, err := client.NewEnvClient()
-	if err != nil {
-		log.Fatalf("%v", err)
-		return
+func exampleRunAndJudge() error {
+	cli := dockerutils.NewClient()
+	if cli == nil {
+		return fmt.Errorf("Failed to initialize docker client")
 	}
 	problemsDir, err := filepath.Abs("../../")
 	if err != nil {
 		log.Fatalf("%v", err)
-		return
+		return err
 	}
 	u := &umpire.Agent{cli, problemsDir, nil}
 	err = u.RunAndJudge(context.Background(), payloadExample, os.Stdout, ioutil.Discard)
 	log.Printf("In main, got: %v", err)
+	return nil
 }
 
-func exampleJudgeAll() {
-	cli, err := client.NewEnvClient()
-	if err != nil {
-		log.Fatalf("%v", err)
-		return
+func exampleJudgeAll() error {
+	cli := dockerutils.NewClient()
+	if cli == nil {
+		return fmt.Errorf("Failed to initialize docker client")
 	}
+
 	problemsDir, err := filepath.Abs("../../")
 	if err != nil {
 		log.Fatalf("%v", err)
-		return
+		return err
 	}
 	u := &umpire.Agent{cli, problemsDir, nil}
 	err = u.JudgeAll(context.Background(), payloadExample, ioutil.Discard, ioutil.Discard)
 	log.Printf("In main, got: %v", err)
+	return err
 }
 
-func run() {
-	cli, err := client.NewEnvClient()
-	if err != nil {
-		log.Fatalf("%v", err)
-		return
+func run() error {
+	cli := dockerutils.NewClient()
+	if cli == nil {
+		return fmt.Errorf("Failed to initialize docker client")
 	}
 	problemsDir, err := filepath.Abs("../../")
 	if err != nil {
 		log.Fatalf("%v", err)
-		return
+		return err
 	}
 	u := &umpire.Agent{cli, problemsDir, nil}
 	out := umpire.RunDefault(u, payloadExample)
 	fmt.Printf("out=%v\n", out)
+	return nil
 }
 
 func newmain() {

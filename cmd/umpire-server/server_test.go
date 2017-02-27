@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"github.com/maddyonline/umpire"
+	"github.com/maddyonline/umpire/pkg/dockerutils"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
@@ -49,9 +50,11 @@ func assertMapEqual(t *testing.T, got, expected map[string]string) {
 }
 
 func TestEndToEnd(t *testing.T) {
-	agent, err := umpire.NewAgent(nil, nil)
-	if err != nil {
-		t.Fatal(err)
+	agent := &umpire.Agent{
+		Client: dockerutils.NewClient(),
+	}
+	if agent.Client == nil {
+		t.Fatalf("Failed to initialize docker client")
 	}
 	server := NewUmpireServer(agent)
 	e := server.e

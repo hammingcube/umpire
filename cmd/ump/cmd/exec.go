@@ -17,20 +17,11 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/docker/docker/client"
 	"github.com/maddyonline/umpire"
 	"github.com/maddyonline/umpire/pkg/dockerutils"
 	"github.com/spf13/cobra"
 	"os"
 )
-
-func NewClient() *client.Client {
-	dockerutils.InitMachines([]string{"local", "myremotedocker"})
-	if m := dockerutils.GetMachine(); m != nil {
-		return m
-	}
-	return nil
-}
 
 var language string
 
@@ -38,21 +29,19 @@ var language string
 var execCmd = &cobra.Command{
 	Use:   "exec",
 	Short: "compiles and runs files in specified directory",
-	Long: `A longer description that spans multiple lines and likely contains examples
-and usage of using your command. For example:
+	Long: `This command can be used to quickly run source files and test against given input. For example:
 
-Cobra is a CLI library for Go that empowers applications.
-This application is a tool to generate the needed files
-to quickly create a Cobra application.`,
+One may run cpp source files in the current directory
+by running: ump exec . input.txt
+More generally, one can run as follows.
+ump exec <source-dir> [<input.txt>] -L python`,
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Printf("exec called with args: %v with language=%s\n", args, language)
-		dockerClient := NewClient()
-		if dockerClient == nil {
-			return
+		agent := &umpire.Agent{
+			Client: dockerutils.NewClient(),
 		}
-		agent, err := umpire.NewAgent(dockerClient, nil)
-		if err != nil {
-			fmt.Printf("Error: %v\n", err)
+		if agent.Client == nil {
+			fmt.Println("Failed to initialze docker client")
 			return
 		}
 		stdin := ""

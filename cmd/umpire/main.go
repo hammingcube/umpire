@@ -5,14 +5,18 @@ import (
 	"flag"
 	"fmt"
 	"github.com/maddyonline/umpire"
+	"github.com/maddyonline/umpire/pkg/dockerutils"
 	"os"
 	"path/filepath"
 )
 
 func main() {
-	agent, err := umpire.NewAgent(nil, nil)
-	if err != nil {
-		fmt.Printf("Error: %v\n", err)
+	agent := &umpire.Agent{
+		Client: dockerutils.NewClient(),
+		Data:   make(map[string]*umpire.JudgeData),
+	}
+	if agent.Client == nil {
+		fmt.Printf("Failed to initialize docker client")
 		os.Exit(1)
 	}
 	updateCommand := flag.NewFlagSet("update", flag.ExitOnError)

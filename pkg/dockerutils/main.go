@@ -29,11 +29,12 @@ const (
 )
 
 var (
-	dir         *ClientsDir = &ClientsDir{}
-	firebaseDB  *firego.Firebase
-	WorkingDir  string
-	DOCKER_KEYS = []string{DOCKER_TLS_VERIFY_KEY, DOCKER_HOST_KEY, DOCKER_CERT_PATH_KEY}
-	PEM_KEYS    = []string{"ca", "cert", "key"}
+	dir          *ClientsDir = &ClientsDir{}
+	firebaseDB   *firego.Firebase
+	WorkingDir   string
+	DOCKER_KEYS  = []string{DOCKER_TLS_VERIFY_KEY, DOCKER_HOST_KEY, DOCKER_CERT_PATH_KEY}
+	PEM_KEYS     = []string{"ca", "cert", "key"}
+	DEFAULT_OPTS = []string{"myremotedocker", "local"}
 )
 
 func workdir() (*string, error) {
@@ -354,6 +355,18 @@ func GetMachine() *client.Client {
 		}
 	}
 	return nil
+}
+
+func NewClientWithOpts(options []string) *client.Client {
+	InitMachines(options)
+	if m := GetMachine(); m != nil {
+		return m
+	}
+	return nil
+}
+
+func NewClient() *client.Client {
+	return NewClientWithOpts(DEFAULT_OPTS)
 }
 
 func ListMachines() string {

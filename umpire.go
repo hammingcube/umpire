@@ -381,24 +381,6 @@ func printStruct(v interface{}) {
 	fmt.Println(string(out))
 }
 
-func NewAgent(cli *client.Client, data map[string]*JudgeData) (*Agent, error) {
-	if cli == nil {
-		dcli, err := client.NewEnvClient()
-		if err != nil {
-			return nil, err
-		}
-		cli = dcli
-	}
-	if data == nil {
-		data = make(map[string]*JudgeData)
-	}
-	return &Agent{
-			Client: cli,
-			Data:   data,
-		},
-		nil
-}
-
 var UmpireCacheFilename = ".umpire.cache.json"
 var LangPriority = map[string]int{"cpp": 1, "python": 2, "javascript": 3, "typescript": 4}
 var SourceFilesWhitelist = map[string]map[string]bool{
