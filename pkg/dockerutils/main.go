@@ -116,6 +116,9 @@ func authenticatedFirebase() (*firego.Firebase, error) {
 	}
 
 	f := firego.New("https://optimal-code-admin.firebaseio.com", conf.Client(oauth2.NoContext))
+	if f == nil {
+		return nil, fmt.Errorf("Got nil firebase reference")
+	}
 	return f, nil
 }
 
