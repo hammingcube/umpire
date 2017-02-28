@@ -307,8 +307,10 @@ func addEnvMapClient(r io.Reader, name string) error {
 	return nil
 }
 
-func InitMachines(names []string) {
-	Init()
+func InitMachines(names []string) error {
+	if err := Init(); err != nil {
+		return err
+	}
 	for _, name := range names {
 		if name == "local" {
 			os.Setenv(DOCKER_API_VERSION_KEY, DEFAULT_API_VERSION)
@@ -321,6 +323,7 @@ func InitMachines(names []string) {
 			dir.Add(cli, err, RemoteEnv, name)
 		}
 	}
+	return nil
 }
 
 func addMachinesFromCache() error {
@@ -358,7 +361,10 @@ func GetMachine() *client.Client {
 }
 
 func NewClientWithOpts(options []string) *client.Client {
-	InitMachines(options)
+	if err := InitMachines(options); err != nil {
+		io.Copy(os.Stderr, strings.NewReader(err.Error()))
+		os.Exit(1)
+	}
 	if m := GetMachine(); m != nil {
 		return m
 	}
