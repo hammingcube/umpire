@@ -39,12 +39,13 @@ var (
 
 func workdir() (*string, error) {
 	const WORKDIR = "dockerutils"
-	usr, err := user.Current()
-	if err != nil {
-		return nil, err
+	var basedir string
+	if usr, err := user.Current(); err == nil {
+		basedir = usr.HomeDir
+	} else {
+		basedir = "."
 	}
-
-	wd, err := filepath.Abs(filepath.Join(usr.HomeDir, WORKDIR))
+	wd, err := filepath.Abs(filepath.Join(basedir, WORKDIR))
 	if err != nil {
 		return nil, err
 	}
@@ -103,6 +104,7 @@ func (d *ClientsDir) Add(cli *client.Client, err error, clitype ClientType, name
 
 func authenticatedFirebase() (*firego.Firebase, error) {
 	gopath := os.Getenv("GOPATH")
+	fmt.Printf("GOPATH: %s\n", gopath)
 	secretFile := filepath.Join(gopath, SECRETS_SRC)
 	d, err := ioutil.ReadFile(secretFile)
 	if err != nil {
@@ -122,12 +124,15 @@ func authenticatedFirebase() (*firego.Firebase, error) {
 	return f, nil
 }
 
-func readFromFirebase(f *firego.Firebase, name string) (map[string]string, error) {
+func readFromFirebase(f *firego.Firebase, name string) (error, map[string]string) {
+	if f == nil {
+		return fmt.Errorf("Empty firebase reference: %v", f), nil
+	}
 	data := map[string]string{}
 	if err := f.Child(name).Value(&data); err != nil {
-		return nil, err
+		return err, nil
 	}
-	return data, nil
+	return nil, data
 }
 
 func saveToFirebase(f *firego.Firebase, path string, data map[string]string) error {
@@ -215,24 +220,21 @@ func relocate(name string, m map[string]string, updateDB bool) (*string, error) 
 	return &dir, nil
 }
 
-func RestoreEnvmapFromDB(name string) (map[string]string, error) {
-	m, err := readFromFirebase(firebaseDB, name)
+func RestoreEnvmapFromDB(name string) (error, map[string]string) {
+	err, m := readFromFirebase(firebaseDB, name)
 	if err != nil {
-		return nil, err
-	}
-	if m == nil {
-		return nil, fmt.Errorf("Got empty map from DB")
+		return err, nil
 	}
 	path, err := relocate(name, m, false)
 	if err != nil {
-		return nil, err
+		return err, nil
 	}
 	envmap := map[string]string{}
 	for _, k := range DOCKER_KEYS {
 		envmap[k] = m[k]
 	}
 	envmap[DOCKER_CERT_PATH_KEY] = *path
-	return envmap, nil
+	return nil, envmap
 }
 
 func RelocateEnvFile(name string, r io.Reader) (map[string]string, error) {
@@ -310,20 +312,37 @@ func addEnvMapClient(r io.Reader, name string) error {
 	return nil
 }
 
+func AddLocal(name string) error {
+	os.Setenv(DOCKER_API_VERSION_KEY, DEFAULT_API_VERSION)
+	cli, err := client.NewEnvClient()
+	dir.Add(cli, err, LocalEnv, name)
+	return nil
+}
+
+func AddRemote(name string) error {
+	err, envmap := RestoreEnvmapFromDB(name)
+	if err != nil {
+		return err
+	}
+	cli, err := NewEnvMapClient(envmap)
+	dir.Add(cli, err, RemoteEnv, name)
+	return nil
+}
+
 func InitMachines(names []string) error {
 	if err := Init(); err != nil {
 		return err
 	}
 	for _, name := range names {
-		if name == "local" {
-			os.Setenv(DOCKER_API_VERSION_KEY, DEFAULT_API_VERSION)
-			cli, err := client.NewEnvClient()
-			dir.Add(cli, err, LocalEnv, name)
-			continue
-		}
-		if envmap, err := RestoreEnvmapFromDB(name); err == nil {
-			cli, err := NewEnvMapClient(envmap)
-			dir.Add(cli, err, RemoteEnv, name)
+		switch name {
+		case "local":
+			if err := AddLocal(name); err != nil {
+				return err
+			}
+		default:
+			if err := AddRemote(name); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

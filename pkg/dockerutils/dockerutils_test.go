@@ -21,6 +21,25 @@ func TestAuthenticatedFirebase(t *testing.T) {
 	t.Logf("%v, %v", fb, err)
 }
 
+func TestInit(t *testing.T) {
+	if err := Init(); err != nil {
+		t.Errorf("Err: %v", err)
+	}
+}
+
+func TestAddLocal(t *testing.T) {
+	if err := AddLocal("local"); err != nil {
+		t.Errorf("Err: %v", err)
+	}
+}
+
+func TestAddRemote(t *testing.T) {
+	Init()
+	if err := AddRemote("myremotedocker"); err != nil {
+		t.Errorf("Err: %v", err)
+	}
+}
+
 func TestInitMachines(t *testing.T) {
 	InitMachines([]string{"myremotedocker"})
 	t.Logf("machines: %s", ListMachines())
@@ -81,7 +100,7 @@ func TestRestoreEnvmapFromDB(t *testing.T) {
 
 func TestReadFromFirebase(t *testing.T) {
 	Init()
-	m, err := readFromFirebase(firebaseDB, "remotedocker")
+	err, m := readFromFirebase(firebaseDB, "myremotedocker")
 	if err != nil {
 		t.Error(err)
 	}
