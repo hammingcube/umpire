@@ -1,0 +1,13 @@
+{
+  "problem": {
+    "id": ""
+  },
+  "language": "cpp",
+  "stdin": "",
+  "files": [
+    {
+      "name": "main.cpp",
+      "content": "# include <iostream>\n\nint main() {\n    std::cout << \"hello\\n\";\n    std::cout << \"hello\";\n}"
+    }
+  ]
+}
