@@ -1,17 +1,15 @@
-FROM ubuntu
+FROM golang:1.7
 
-ENV GOPATH /go
 ENV SRCDIR /go/src/github.com/maddyonline
 
-RUN mkdir -p $SRCDIR/optcode-secrets
-RUN mkdir -p $SRCDIR/umpire
+COPY . ${SRCDIR}/umpire
 
+COPY files/clean_dir/optcode-secrets ${SRCDIR}/optcode-secrets
+COPY files/clean_dir/problemset ${SRCDIR}/problemset
 
-COPY files/optimal-code-admin.json $SRCDIR/optcode-secrets/optimal-code-admin.json
-COPY files/umpire-server $SRCDIR/umpire/umpire-server
+RUN cd ${SRCDIR}/umpire && go get -v ./...
+RUN cd ${SRCDIR}/umpire && umpire update ../problemset
 
-WORKDIR $SRCDIR/umpire
-
+WORKDIR ${SRCDIR}/umpire
 EXPOSE 1323
-
-
+ENTRYPOINT ["/go/bin/umpire-server"]

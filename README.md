@@ -37,3 +37,9 @@ Linux build
 docker run --rm -it -v $PWD/files:/go/bin/linux_386 -e GOPATH=/go -w /go/src/app -e GOOS=linux -e GOARCH=386 golang go get -u -v github.com/maddyonline/umpire/...
 ```
 
+```sh
+sudo GOPATH=$GOPATH GOOS=linux GOARCH=386 go get -v ./...
+cp /Users/maddy/work/bin/linux_386/umpire-server files/
+docker build . -t dkr1 --no-cache
+docker run -t -i dkr1 ./umpire-server
+```
