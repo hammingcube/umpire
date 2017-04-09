@@ -52,3 +52,5 @@ git clone https://github.com/maddyonline/problemset files/clean_dir/problemset
 docker build . -t dkr-umpire --no-cache
 ```
 
+see also cloudbuild
+
