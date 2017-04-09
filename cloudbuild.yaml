@@ -1,0 +1,14 @@
+steps:
+# Use ubuntu to run a shell script, and set several env vars for its execution.
+- name: 'ubuntu'
+  args: ['bash', './myscript.sh']
+  env:
+  - 'BUILD=$BUILD_ID'
+  - 'PROJECT=$PROJECT_ID'
+  - 'REV=$REVISION_ID'
+# Build an image to be put in your project's GCR registry.
+- name: 'gcr.io/cloud-builders/docker'
+  args: ['build', '-t', 'gcr.io/$PROJECT_ID/$REPO_NAME:$COMMIT_SHA', '.']
+images:
+- 'gcr.io/$PROJECT_ID/$REPO_NAME:$COMMIT_SHA'
+
